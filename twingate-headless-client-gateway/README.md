@@ -17,7 +17,7 @@ Also make sure that this system is set up with a static IP and has access to the
 
 # Usage
 In the working folder, run the following command to pull down the script:
-`curl https://raw.githubusercontent.com/Twingate-Solutions/general-scripts/twingate-headless-client-gateway/main/tg_gateway_config.sh -o gateway_config.sh`
+`curl https://raw.githubusercontent.com/Twingate-Solutions/general-scripts/main/twingate-headless-client-gateway/twingate-headless-client-gateway.sh -o gateway_config.sh`
 
 When you run the script, you'll need to provide two parameters:
 - Path to the servicekey.json you saved
