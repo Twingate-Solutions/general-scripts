@@ -83,7 +83,7 @@ else
 fi
 
 # Run package manager update
-$PKG_MANAGER update
+$PKG_MANAGER -y update
 
 # Install necessary packages
 if [ $PKG_MANAGER = "dnf" ]; then # Fedora
@@ -100,11 +100,11 @@ sudo twingate setup --headless $TWINGATE_SERVICE_KEY_FILE
 twingate start
 
 # Configure services
-if [ $PKG_MANAGER = "dnf" ] then # Fedora
-  # Configure bind to listen on the main network interface IP address and the localhost in ipv4 mode only
-  # Note: The forwarders are set to the Twingate Client resolvers
-  rm /etc/named.conf
-  cat <<EOF > /etc/named.conf
+if [ $PKG_MANAGER = "dnf" ]; then # Fedora
+# Configure bind to listen on the main network interface IP address and the localhost in ipv4 mode only
+# Note: The forwarders are set to the Twingate Client resolvers
+rm /etc/named.conf
+cat <<EOF > /etc/named.conf
 acl LAN {
 $LOCAL_NETWORK_SUBNET;
 };
@@ -123,22 +123,22 @@ options {
 };
 EOF
 
-  echo "OPTIONS=\"-4\"" >> /etc/sysconfig/named 
+echo "OPTIONS=\"-4\"" >> /etc/sysconfig/named 
 
-  # start bind
-  systemctl restart named
-  systemctl enable named
+# start bind
+systemctl restart named
+systemctl enable named
 
-  # Configure firewalld to NAT traffic from the local network out through the Twingate client
-  firewall-cmd --permanent --zone=public --add-masquerade
-  firewall-cmd --permanent --direct --passthrough ipv4 -t nat -A POSTROUTING -s $LOCAL_NETWORK_SUBNET -o sdwan0 -j MASQUERADE
-  firewall-cmd --reload
+# Configure firewalld to NAT traffic from the local network out through the Twingate client
+firewall-cmd --permanent --zone=public --add-masquerade
+firewall-cmd --permanent --direct --passthrough ipv4 -t nat -A POSTROUTING -s $LOCAL_NETWORK_SUBNET -o sdwan0 -j MASQUERADE
+firewall-cmd --reload
 
 
 else # Ubuntu
-  # Configure bind to listen on the main network interface IP address and the localhost in ipv4 mode only
-  # Note: The forwarders are set to the Twingate Client resolvers
-  cat <<EOF > /etc/bind/named.conf.options
+# Configure bind to listen on the main network interface IP address and the localhost in ipv4 mode only
+# Note: The forwarders are set to the Twingate Client resolvers
+cat <<EOF > /etc/bind/named.conf.options
 acl LAN {
 $LOCAL_NETWORK_SUBNET;
 };
@@ -157,16 +157,16 @@ options {
 };
 EOF
 
-  # Set bind9 to IPv4 only
-  sed -i 's/OPTIONS="-u bind"/OPTIONS="-u bind -4"/' /etc/default/named
+# Set bind9 to IPv4 only
+sed -i 's/OPTIONS="-u bind"/OPTIONS="-u bind -4"/' /etc/default/named
 
-  # Restart bind9
-  systemctl restart bind9
-  systemctl restart named
+# Restart bind9
+systemctl restart bind9
+systemctl restart named
 
-  # Configure iptables to NAT traffic from the local network out through the Twingate client
-  iptables -t nat -A POSTROUTING -s $LOCAL_NETWORK_SUBNET -o sdwan0 -j MASQUERADE
-  iptables-save > /etc/iptables/rules.v4
+# Configure iptables to NAT traffic from the local network out through the Twingate client
+iptables -t nat -A POSTROUTING -s $LOCAL_NETWORK_SUBNET -o sdwan0 -j MASQUERADE
+iptables-save > /etc/iptables/rules.v4
 fi
 
 # Enable IPv4 forwarding
