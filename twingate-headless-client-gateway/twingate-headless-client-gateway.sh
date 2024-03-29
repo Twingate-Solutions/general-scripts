@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# This bash script will configure the underlying Ubuntu operating system to
+# This bash script will configure the underlying Ubuntu or Fedora operating system to
 # run as a Twingate Internet gateway for the local network.
-# This script is intended to be run on a fresh Ubuntu 22.04 LTS installation, 
+# This script is intended to be run on a fresh Ubuntu 22.04 LTS or Fedora 39 installation, 
 # but should work on earlier still supported versions.
 
 # It will install and/or configure the following services:
