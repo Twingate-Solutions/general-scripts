@@ -24,7 +24,7 @@ When you run the script, you'll need to provide two parameters:
 - Your network's subnet range in CIDR format, ie 10.0.0.0/24 or 192.168.1.0/24
 
 To run the script simply execute with the two parameters:
-`sudo bash ./tg_gateway_config.sh ./servicekey.json 10.0.0.0/24`
+`sudo bash ./gateway_config.sh ./servicekey.json 10.0.0.0/24`
 
 If there's an error or issue with the parameters the script will output it, otherwise it should run through a set of steps:
 1. `apt update` and `apt upgrade`
