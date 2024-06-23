@@ -14,18 +14,18 @@ $twingateNetworkName = "networkname" #this is the name of the network in Twingat
 
 # Check to see if the .NET Desktop Runtime 6.0 is already installed
 Write-Host [+] Checking if .NET Desktop Runtime 6.0 is already installed
-$dotnetRuntime = Get-WmiObject -Query "SELECT * FROM Win32_Product WHERE Name LIKE '%.NET%Runtime%6%'"
+$dotnetRuntime = Get-WmiObject -Query "SELECT * FROM Win32_Product WHERE Name LIKE '%.NET%Runtime%6.%.%'"
 if ($dotnetRuntime -ne $null) {
     Write-Host [+] .NET Desktop Runtime 6.0 is already installed
 } else {
     # Installing the .NET Desktop Runtime
     Write-Host [+] .NET Desktop Runtime 6.0 is not installed
     Write-Host [+] Downloading .NET Desktop Runtime
-    $AgentURI = 'https://download.visualstudio.microsoft.com/download/pr/3ef3cd0c-8c7f-4146-bd8d-589d748b997e/3477d059f8fe5cceb5166b367d7995c6/windowsdesktop-runtime-6.0.27-win-x64.exe'
-    $AgentDest = 'C:\Windows\Temp\windowsdesktop-runtime-6.0.29-win-x64.exe'
+    $AgentURI = 'https://download.visualstudio.microsoft.com/download/pr/a1da19dc-d781-4981-84e9-ffa0c05e00e9/46f3cd2015c27a0e93d7c102a711577e/windowsdesktop-runtime-6.0.31-win-x64.exe'
+    $AgentDest = 'C:\Windows\Temp\windowsdesktop-runtime-6.0.31-win-x64.exe'
     Invoke-WebRequest $AgentURI -OutFile $AgentDest -UseBasicParsing
     Write-Host [+] Installing the .NET Desktop Runtime
-    cmd /c "C:\Windows\Temp\windowsdesktop-runtime-6.0.29-win-x64.exe /install /quiet /norestart"
+    cmd /c "C:\Windows\Temp\windowsdesktop-runtime-6.0.31-win-x64.exe /install /quiet /norestart"
     Write-Host [+] Finished installing .NET Desktop Runtime
 }
 
