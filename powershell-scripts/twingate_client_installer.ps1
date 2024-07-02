@@ -10,7 +10,25 @@
 
 # Set the variables
 $twingateClientPath = "C:\Program Files\Twingate\Twingate.exe"
+
+#############################
+##  Change the line below  ##
+#############################
 $twingateNetworkName = "networkname" #this is the name of the network in Twingate, ie networkname.twingate.com when you log in to the Admin Console
+
+# Check to see if Twingate is already running, if so kill it
+Write-Host [+] Checking for existing Twingate install
+if ((Get-Process -Name "Twingate" -ErrorAction SilentlyContinue) -And (Get-Service -Name "twingate.service" -ErrorAction SilentlyContinue)) {
+	Stop-Service -Name $twingateServiceName -Force -ErrorAction SilentlyContinue
+	Stop-Process -Name "Twingate" -Force -ErrorAction SilentlyContinue
+}
+
+# Un-comment the five lines below to do a fresh install each time, uninstall the client completely before re-installing
+# Write-Host [+] Uninstalling Twingate
+# $twingateApp = Get-WmiObject -Class Win32_Product | Where-Object{$_.Name.Contains("Twingate")}
+# if ($twingateApp) {
+# 	$twingateApp.Uninstall()
+# }
 
 # Check to see if the .NET Desktop Runtime 6.0 is already installed
 Write-Host [+] Checking if .NET Desktop Runtime 6.0 is already installed
