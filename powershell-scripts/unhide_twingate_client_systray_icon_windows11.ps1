@@ -1,6 +1,9 @@
 <#
 .SYNOPSIS
 Unhides the Twingate Client Application icon.  Currently only tested on Windows 11 Pro.  Can be run via MDM after the Twingate Client Application has been installed.
+
+.REFERENCES
+Original script by @satnix - https://github.com/satnix/Windows11/blob/main/PermanentSystemTrayIcon.ps1
 #>
 
 # Main function
