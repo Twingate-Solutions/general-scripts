@@ -15,10 +15,11 @@ $twingateClientPath = "C:\Program Files\Twingate\Twingate.exe"
 ##  Change the line below  ##
 #############################
 $twingateNetworkName = "networkname" #this is the name of the network in Twingate, ie networkname.twingate.com when you log in to the Admin Console
+$twingateServiceName = "twingate.service"
 
 # Check to see if Twingate is already running, if so kill it
 Write-Host [+] Checking for existing Twingate install
-if ((Get-Process -Name "Twingate" -ErrorAction SilentlyContinue) -And (Get-Service -Name "twingate.service" -ErrorAction SilentlyContinue)) {
+if ((Get-Process -Name "Twingate" -ErrorAction SilentlyContinue) -And (Get-Service -Name $twingateServiceName -ErrorAction SilentlyContinue)) {
 	Stop-Service -Name $twingateServiceName -Force -ErrorAction SilentlyContinue
 	Stop-Process -Name "Twingate" -Force -ErrorAction SilentlyContinue
 }
