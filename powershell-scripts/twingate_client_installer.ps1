@@ -29,7 +29,7 @@ $uninstallFirst = $false
 # }
 # '@
 #
-# Make sure to paste the contents of the machinekey.conf file such that it matches the format above.
+# Make sure to paste the contents of the machinekey.conf file replacing `machinekey`, such that it matches the format above.
 
 $createMachineKey = $false
 $machineKeyTargetFolder = "C:\ProgramData\Twingate" # Don't touch this
@@ -114,13 +114,25 @@ if ($createMachineKey) {
         Write-Host [+] Creating Twingate folder
         New-Item -ItemType Directory -Path $machineKeyTargetFolder
     }
-    Write-Host [+] Creating machinekey.conf
-    New-Item "$machineKeyTargetFolder\machinekey.conf" -ItemType File -Value $machineKeyContent
+
+    # Check to see if the file exists already, if so delete and recreate
+    if (-not (Get-Item -Path "$machineKeyTargetFolder\machinekey.conf" -ErrorAction SilentlyContinue)) {
+        Write-Host [+] Creating machinekey.conf
+        New-Item "$machineKeyTargetFolder\machinekey.conf" -ItemType File -Value $machineKeyContent
+    } else {
+        Write-Host [+] machinekey.conf already exists, deleting and recreating
+        Remove-Item "$machineKeyTargetFolder\machinekey.conf" -Force
+        New-Item "$machineKeyTargetFolder\machinekey.conf" -ItemType File -Value $machineKeyContent
+    }
     Write-Host [+] Finished installing machinekey.conf
 }
 
 # If the createScheduledTask variable is set to true, then create the scheduled task
 if ($createScheduledTask) {
+    if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) {
+        Write-Host [+] Scheduled Task already exists, removing and recreating
+        Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
+    }
     Write-Host [+] Scheduled Task flag set, creating scheduled task
     Write-Host [+] Creating scheduled task
     $action = New-ScheduledTaskAction -Execute $twingateClientPath
@@ -145,4 +157,5 @@ if ($createScheduledTask) {
     Start-Service -Name $twingateServiceName -ErrorAction SilentlyContinue
 }
 
+# Finished running the script
 Write-Host [+] Finished running Twingate Client installer script
