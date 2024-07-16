@@ -187,7 +187,8 @@ if ($createScheduledTask) {
         $(New-ScheduledTaskTrigger -AtStartup)
     )
     $taskSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
-    Register-ScheduledTask -TaskName $taskName -Description $taskDescription -Action $action -Trigger $taskTrigger -Settings $taskSettings -User "$Env:USERDOMAIN\$ENV:USERNAME"
+    $taskPrincipal = New-ScheduledTaskPrincipal -GroupId "BUILTIN\Users"
+    Register-ScheduledTask -TaskName $taskName -Description $taskDescription -Action $action -Trigger $taskTrigger -Settings $taskSettings -Principal $taskPrincipal
     Write-Host [+] Finished creating scheduled task
 
     # Since a scheduled task has been created, start it and the Twingate service
