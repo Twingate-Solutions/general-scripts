@@ -59,7 +59,53 @@ $twingateClientPath = "C:\Program Files\Twingate\Twingate.exe"
 # Twingate Windows service name
 $twingateServiceName = "twingate.service"
 
+###################################
+##         Functions             ##
+###################################
 
+# Function to promote the Twingate icon in the Windows registry, Windows 11 only
+Function promoteTwingateIcon {
+    Param (
+        [string]$Path
+    )
+
+    $results = @()
+
+    # Get all subkeys
+    $subkeys = Get-ChildItem -Path $Path
+
+    # Iterate through each subkey
+    foreach ($subkey in $subkeys) {
+        $subkeyPath = $subkey.PSPath
+
+        # Check if the subkey has an "ExecutablePath" value
+        if (Test-Path $subkeyPath) {
+            $key = Get-Item -LiteralPath $subkeyPath
+            if ($key.GetValue("ExecutablePath")) {
+                $executablePath = $key.GetValue("ExecutablePath")
+
+                # Check if the executable path contains "twingate.exe"
+                if ($executablePath -like "*twingate.exe") {
+                    $results += [PSCustomObject]@{
+                        "RegistryKey" = $subkeyPath
+                        "ExecutablePath" = $executablePath
+                    }
+                    # Create the "IsPromoted" DWORD value with data "1"
+                    Set-ItemProperty -Path $subkeyPath -Name "IsPromoted" -Value 1 -Type DWord
+                }
+            }
+        }
+    }
+    return $results
+}
+
+###################################
+##         Main Script           ##
+###################################
+
+# Start transcript of the script
+Stop-Transcript | Out-Null
+Start-Transcript -path c:\client-install.log -append
 
 # Check to see if Twingate is already running, if so kill it
 Write-Host [+] Checking for existing Twingate install
@@ -104,7 +150,6 @@ Invoke-WebRequest $AgentURI -OutFile $AgentDest -UseBasicParsing
 Write-Host [+] Installing the Twingate Client
 cmd /c "msiexec.exe /i C:\Windows\Temp\TwingateInstaller.msi /qn network=$twingateNetworkName.twingate.com no_optional_updates=true"
 Write-Host [+] Finished installing Twingate Client
-Write-Host [+] Starting Twingate Client
 
 # If the createMachineKey variable is set to true, then create the machinekey.conf file
 if ($createMachineKey) {
@@ -142,20 +187,34 @@ if ($createScheduledTask) {
         $(New-ScheduledTaskTrigger -AtStartup)
     )
     $taskSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
-    Register-ScheduledTask -TaskName $taskName -Description $taskDescription -Action $action -Trigger $taskTrigger -Settings $taskSettings
+    Register-ScheduledTask -TaskName $taskName -Description $taskDescription -Action $action -Trigger $taskTrigger -Settings $taskSettings -User "$Env:USERDOMAIN\$ENV:USERNAME"
     Write-Host [+] Finished creating scheduled task
 
     # Since a scheduled task has been created, start it and the Twingate service
-    Write-Host [+] Starting Task
+    Write-Host [+] Starting Task, starting Twingate Client
     Start-ScheduledTask -TaskName $taskName
     Start-Service -Name $twingateServiceName -ErrorAction SilentlyContinue
 } else {
     Write-Host [+] Scheduled Task flag not set, skipping scheduled task creation
 
     # Start the Twingate service and application
+    Write-Host [+] Starting Twingate Client
     Start-Process -FilePath $twingateClientPath
     Start-Service -Name $twingateServiceName -ErrorAction SilentlyContinue
 }
 
+# Promote the Twingate icon in the Windows registry, Windows 11 only
+Write-Host [+] Trying to promote Twingate icon in the Windows registry
+promoteTwingateIcon "HKCU:\Control Panel\NotifyIconSettings"
+foreach ($result in $results) {
+    Write-Host "Registry Key: $($result.RegistryKey)"
+    Write-Host "ExecutablePath: $($result.ExecutablePath)"
+    Write-Host ""
+}
+
 # Finished running the script
 Write-Host [+] Finished running Twingate Client installer script
+
+Stop-Transcript | Out-Null
+
+Exit 0
