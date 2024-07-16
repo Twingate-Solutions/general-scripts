@@ -64,39 +64,47 @@ $twingateServiceName = "twingate.service"
 ###################################
 
 # Function to promote the Twingate icon in the Windows registry, Windows 11 only
-Function promoteTwingateIcon {
-    Param (
-        [string]$Path
-    )
+function Set-TwingateNotifyIconPromoted {
+    $results = @()  # Initialize the results array
 
-    $results = @()
+    # Get all the subkeys under HKEY_USERS
+    $userSIDs = Get-ChildItem -Path "registry::HKEY_USERS\"
 
-    # Get all subkeys
-    $subkeys = Get-ChildItem -Path $Path
+    foreach ($userSID in $userSIDs) {
 
-    # Iterate through each subkey
-    foreach ($subkey in $subkeys) {
-        $subkeyPath = $subkey.PSPath
+        # Define the path to NotifyIconSettings for the current user
+        $notifyIconPath = "registry::HKEY_USERS\$($userSID.PSChildName)\Control Panel\NotifyIconSettings"
 
-        # Check if the subkey has an "ExecutablePath" value
-        if (Test-Path $subkeyPath) {
-            $key = Get-Item -LiteralPath $subkeyPath
-            if ($key.GetValue("ExecutablePath")) {
-                $executablePath = $key.GetValue("ExecutablePath")
+        # Check if NotifyIconSettings exists for the current user
+        if (Test-Path -Path $notifyIconPath) {
+            # Get all the subkeys under NotifyIconSettings
+            $notifyIconSubKeys = Get-ChildItem -Path $notifyIconPath
 
-                # Check if the executable path contains "twingate.exe"
-                if ($executablePath -like "*twingate.exe") {
-                    $results += [PSCustomObject]@{
-                        "RegistryKey" = $subkeyPath
-                        "ExecutablePath" = $executablePath
+            foreach ($subKey in $notifyIconSubKeys) {
+                # Get the full path of the current subkey
+                $subKeyPath = "registry::HKEY_USERS\$($userSID.PSChildName)\Control Panel\NotifyIconSettings\$($subKey.PSChildName)"
+
+                # Check if the ExecutablePath value exists
+                $executablePath = Get-ItemProperty -Path $subKeyPath -Name "ExecutablePath" -ErrorAction SilentlyContinue
+
+                if ($executablePath -and $executablePath.ExecutablePath -like "*twingate.exe*") {
+                    # Set the IsPromoted value to 1
+                    Set-ItemProperty -Path $subKeyPath -Name "IsPromoted" -Value 1
+                    Write-Host [+] Updated IsPromoted for $subKeyPath
+
+                    # Add the result to the results array
+                    $result = [PSCustomObject]@{
+                        UserSID       = $userSID.PSChildName
+                        SubKeyPath    = $subKeyPath
+                        ExecutablePath = $executablePath.ExecutablePath
                     }
-                    # Create the "IsPromoted" DWORD value with data "1"
-                    Set-ItemProperty -Path $subkeyPath -Name "IsPromoted" -Value 1 -Type DWord
+                    $results += $result
                 }
             }
         }
     }
-    return $results
+
+    return $results  # Output the results array
 }
 
 ###################################
@@ -206,7 +214,7 @@ if ($createScheduledTask) {
 
 # Promote the Twingate icon in the Windows registry, Windows 11 only
 Write-Host [+] Trying to promote Twingate icon in the Windows registry
-promoteTwingateIcon "HKCU:\Control Panel\NotifyIconSettings"
+Set-TwingateNotifyIconPromoted
 foreach ($result in $results) {
     Write-Host "Registry Key: $($result.RegistryKey)"
     Write-Host "ExecutablePath: $($result.ExecutablePath)"
