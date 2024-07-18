@@ -13,8 +13,14 @@
 ##  Configure Optional Features  ##
 ###################################
 
-# To uninstall the client app before re-installing, set to true
+# To uninstall the client app before re-installing, set to true.  This can be useful if you want to ensure a clean install.
+# This will also trigger the initial "Join Network" dialog to appear, unless you also include a machinekey.conf in which case
+# the client will automatically join the network and the dialog will be suppressed. 
 $uninstallFirst = $false
+
+# A machine key is used to enforce "always on" for the client, and is typically used for Twingate Internet Security.  It will
+# remote the ability for the user to log out or quit the client application.  This is optional, and should only be used if you
+# are sure you want to enforce always-on connectivity.  If you are unsure, please reach out to Twingate support for guidance.
 
 # To create a machinekey.conf file, set $createMachineKey to true, and paste the contents of the file in the $machineKey variable.
 # The machinekey.conf contents are found in your Twingate Admin Console, under the Internet Security section.
@@ -37,7 +43,7 @@ $machineKeyContent = @"
 machinekey
 "@
 
-# To create a scheduled task to auto-start the Twingate client application if it's ever quit by the user, set to true
+# To create a scheduled task to auto-start the Twingate client application if it's ever quit by the user, set to true.
 # You can also choose how often to check if the Twingate client is running, and how often to restart it.
 $createScheduledTask = $false
 $taskName = "Twingate Client Restart"
@@ -59,40 +65,27 @@ $twingateClientPath = "C:\Program Files\Twingate\Twingate.exe"
 # Twingate Windows service name
 $twingateServiceName = "twingate.service"
 
+# Disable the WebRequest progress bar, speeds up downloads
+$ProgressPreference = "SilentlyContinue"
+
 ###################################
 ##         Functions             ##
 ###################################
 
 # Function to promote the Twingate icon in the Windows registry, Windows 11 only
 function Set-TwingateNotifyIconPromoted {
-    $results = @()  # Initialize the results array
-
-    # Get all the subkeys under HKEY_USERS
+    $results = @()  
     $userSIDs = Get-ChildItem -Path "registry::HKEY_USERS\"
-
     foreach ($userSID in $userSIDs) {
-
-        # Define the path to NotifyIconSettings for the current user
         $notifyIconPath = "registry::HKEY_USERS\$($userSID.PSChildName)\Control Panel\NotifyIconSettings"
-
-        # Check if NotifyIconSettings exists for the current user
         if (Test-Path -Path $notifyIconPath) {
-            # Get all the subkeys under NotifyIconSettings
             $notifyIconSubKeys = Get-ChildItem -Path $notifyIconPath
-
             foreach ($subKey in $notifyIconSubKeys) {
-                # Get the full path of the current subkey
                 $subKeyPath = "registry::HKEY_USERS\$($userSID.PSChildName)\Control Panel\NotifyIconSettings\$($subKey.PSChildName)"
-
-                # Check if the ExecutablePath value exists
                 $executablePath = Get-ItemProperty -Path $subKeyPath -Name "ExecutablePath" -ErrorAction SilentlyContinue
-
                 if ($executablePath -and $executablePath.ExecutablePath -like "*twingate.exe*") {
-                    # Set the IsPromoted value to 1
                     Set-ItemProperty -Path $subKeyPath -Name "IsPromoted" -Value 1
                     Write-Host [+] Updated IsPromoted for $subKeyPath
-
-                    # Add the result to the results array
                     $result = [PSCustomObject]@{
                         UserSID       = $userSID.PSChildName
                         SubKeyPath    = $subKeyPath
@@ -103,15 +96,14 @@ function Set-TwingateNotifyIconPromoted {
             }
         }
     }
-
-    return $results  # Output the results array
+    return $results
 }
 
 ###################################
 ##         Main Script           ##
 ###################################
 
-# Start transcript of the script
+# Start transcription
 Stop-Transcript | Out-Null
 Start-Transcript -path c:\client-install.log -append
 
@@ -124,7 +116,6 @@ if ((Get-Process -Name "Twingate" -ErrorAction SilentlyContinue) -And (Get-Servi
 
 # If the uninstallFirst variable is set to true, then uninstall the Twingate client
 # This is useful if you want to ensure a clean install
-
 if ($uninstallFirst) {
     Write-Host [+] Uninstall flag set, uninstalling Twingate Client application
     $twingateApp = Get-WmiObject -Class Win32_Product | Where-Object{$_.Name.Contains("Twingate")}
