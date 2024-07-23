@@ -104,7 +104,6 @@ function Set-TwingateNotifyIconPromoted {
 ###################################
 
 # Start transcription
-Stop-Transcript | Out-Null
 Start-Transcript -path c:\client-install.log -append
 
 # Check to see if Twingate is already running, if so kill it
