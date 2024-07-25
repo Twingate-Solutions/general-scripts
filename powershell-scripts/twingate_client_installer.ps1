@@ -54,8 +54,8 @@ $taskMinutes = 5
 ##         Set Variables         ##
 ###################################
 
-# Twingate network name, ie networkname.twingate.com when you log in to the Admin Console
-# It's important to change this to your network name if you want to auto-populate it.
+# Twingate network subnet name, ie the subdomain part of networkname.twingate.com when you log in to the Admin Console
+# It's important to change this to your network subnet name if you want to auto-populate it.
 # If you are installing a machinekey.conf then that will override this.
 $twingateNetworkName = "networkname" 
 
