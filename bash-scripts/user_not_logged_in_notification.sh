@@ -1,15 +1,20 @@
 #!/bin/bash
 
 # Configuration Variables
-PROCESS_NAME="Twingate" # Replace with the name of the process to check
-RESOURCE_URL="https://internal.domain.com" # Replace with your resource URL
-TEST_METHOD="get" # or "ping"
+PROCESS_NAME="Twingate" 	  # Replace with the name of the process to check
+RESOURCE_URL="http://10.50.51.76" # Replace with your resource URL
+TEST_METHOD="netcat"		  # Specify "get" or "ping" or "netcat"
+NETCAT_HOST="10.50.51.76"         # Replace with host for netcat test
+NETCAT_PORT="80"		  # Replace with port for netcat test
+TEST_TIMEOUT="5"	          # Specify timeout length
 
 # Function to display macOS notification
 function show_notification {
     local title="$1"
-    local message="$2"
-    osascript -e "display notification \"$message\" with title \"$title\""
+    local subtitle="$2"
+    local message="$3"
+    local soundname="$4"
+    osascript -e "display notification \"$message\" with title \"$title\" subtitle \"$subtitle\" sound name \"default\""
 }
 
 # Function to check if the process is running
@@ -37,6 +42,15 @@ function test_resource_url {
             echo "[-] Ping test failed, user is not logged in."
             return 1
         fi
+    elif [ "$TEST_METHOD" == "netcat" ]; then
+        nc -z -v -G "$TEST_TIMEOUT" "$NETCAT_HOST" "$NETCAT_PORT" > /dev/null 2>&1
+	if [ $? -eq 0 ]; then
+	    echo "[+] Netcat test successful, user is logged in."
+	    return 0
+	else
+            echo "[-] Netcat test failed, user is not logged in."
+	    return 1
+	fi
     else
         echo "[-] Invalid test method specified."
         return 2
@@ -48,9 +62,11 @@ if is_process_running; then
     echo "[+] $PROCESS_NAME process is running, continuing script."
 
     if test_resource_url; then
+        echo "[+] Resource is accessible, no notification needed!"
         exit 0
     else
-        show_notification "Twingate Status" "Have you forgotten to log in to Twingate? Please log in to access the network."
+	echo "[-] Resource is not accessible, sending notification."
+        show_notification "Twingate" "User is not logged in" "Have you forgotten to log in to Twingate? Please log in to access the network." "default"
     fi
 else
     echo "[+] $PROCESS_NAME process is not running, exiting script."
