@@ -74,10 +74,8 @@ $testMethod = $args[1]
 # Main Twingate service name
 $twingateServiceName = "twingate.service"
 
-# Twingate CGNAT IP space
-$Subnet = "100.64.0.0"
-$SubnetMask = "255.192.0.0"
-$Cidr = "100.64.0.0/10"
+# Disable the WebRequest progress bar, speeds up downloads
+$ProgressPreference = "SilentlyContinue"
 
 ###########################
 #        Functions        #
