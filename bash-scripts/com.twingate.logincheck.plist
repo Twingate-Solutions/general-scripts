@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.twingate.logincheck</string>
+
+    <key>ProgramArguments</key>
+    <array>
+       <string>/usr/local/bin/user_not_logged_in_notification.sh</string>
+    </array>
+
+    <key>StartInterval</key>
+    <integer>300</integer> <!-- 300 seconds = 5 minutes -->
+
+    <key>RunAtLoad</key>
+    <true/>
+    
+    <key>StandardOutPath</key>
+    <string>/tmp/twingate_logincheck.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/tmp/twingate_logincheck_error.log</string>
+</dict>
+</plist>

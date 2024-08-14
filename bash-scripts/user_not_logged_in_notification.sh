@@ -1,5 +1,26 @@
 #!/bin/bash
 
+# INSTRUCTIONS:
+#
+# 1 - set configuration variables and decide on test method
+# 2 - "chmod +x user_not_logged_in_notification.sh" to make executable
+# 3 - run manually with "./user_not_logged_in_notification.sh" or run with plist file in launchd
+#
+# For plist file =>
+#
+# 1 - Create plist file
+#	nano ~/Library/LaunchAgents/com.twingate.logincheck.plist
+# 2 - Paste plist template content and configure path or anything else needed
+# 3 - Move the script to /usr/local/bin and make executable
+#       mv <path>/user_not_logged_in_notification.sh /usr/local/bin
+#       chmod +x /usr/local/bin/user_not_logged_in_notification.sh
+# 3 - Load the plist into launchd
+#	launchctl load ~/Library/LaunchAgents/com.twingate.logincheck.plist
+# 4 - Verify that the job is running
+# 	launchctl list | grep com.twingate.logincheck
+# (Optional) To unload the job
+#	launchctl unload ~/Library/LaunchAgents/com.twingate.logincheck.plist
+
 # Configuration Variables
 PROCESS_NAME="Twingate" 	  # Replace with the name of the process to check
 RESOURCE_URL="http://10.50.51.76" # Replace with your resource URL
