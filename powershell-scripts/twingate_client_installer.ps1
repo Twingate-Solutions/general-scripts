@@ -50,6 +50,16 @@ $taskName = "Twingate Client Restart"
 $taskDescription = "This task will check every 5 minutes to see if the Twingate client is running, and restart it if it is not."
 $taskMinutes = 5
 
+# If you want to run a scheduled task to check if the user is logged out of the Twingate client, set to true.  
+# This will download a secondary script `user_not_logged_in_notification.ps1` and schedule it to run based on the configuration below. 
+# The source of this script can be found in the https://github.com/Twingate-Solutions/general-scripts/ repository.
+$checkUserLoggedIn = $false
+$checkUserTaskName = "Twingate User Logged Out Notification"
+$checkUserTaskDescription = "This task will periodically check to see if the user is logged out of the Twingate client."
+$checkUserFrequency = 30 # How often to check if the user is logged in, in minutes
+$checkUserResourceURL = "http://internal.domain.com" # The Resource URL to check if the user is logged in, see the user_not_logged_in_notification.ps1 script for more details
+$checkUserResourceMethod = "get" # The method to use to check the Resource URL, either 'get' or 'ping'
+
 ###################################
 ##         Set Variables         ##
 ###################################
@@ -60,7 +70,7 @@ $taskMinutes = 5
 $twingateNetworkName = "networkname" 
 
 # Path to the Twingate client executable post-installation
-$twingateClientPath = "C:\Program Files\Twingate\Twingate.exe"
+$twingateClientPath = "C:\Program Files\Twingate"
 
 # Twingate Windows service name
 $twingateServiceName = "twingate.service"
@@ -178,7 +188,7 @@ if ($createScheduledTask) {
     }
     Write-Host [+] Scheduled Task flag set, creating scheduled task
     Write-Host [+] Creating scheduled task
-    $action = New-ScheduledTaskAction -Execute $twingateClientPath
+    $action = New-ScheduledTaskAction -Execute "$twingateClientPath\twingate.exe"
     $taskTrigger = @(
         $(New-ScheduledTaskTrigger -Once -At 12:01AM -RepetitionInterval (New-TimeSpan -Minutes $taskMinutes)),
         $(New-ScheduledTaskTrigger -Daily -At 12:01AM),
@@ -198,9 +208,69 @@ if ($createScheduledTask) {
 
     # Start the Twingate service and application
     Write-Host [+] Starting Twingate Client
-    Start-Process -FilePath $twingateClientPath
+    Start-Process -FilePath "$twingateClientPath\twingate.exe"
     Start-Service -Name $twingateServiceName -ErrorAction SilentlyContinue
 }
+
+# If the checkUserLoggedIn variable is set to true, then create the scheduled task to check if the user is logged in
+if ($checkUserLoggedIn) {
+    if (Get-ScheduledTask -TaskName $checkUserTaskName -ErrorAction SilentlyContinue) {
+        Write-Host [+] User Logged In scheduled task already exists, removing and recreating
+        Unregister-ScheduledTask -TaskName $checkUserTaskName -Confirm:$false
+    }
+    Write-Host [+] User Logged In flag set, creating scheduled task
+
+    # Download the script file and put in the new Twingate Client folder
+    Write-Host [+] Downloading user_not_logged_in_notification.ps1
+    $AgentURI = 'https://raw.githubusercontent.com/Twingate-Solutions/general-scripts/main/powershell-scripts/user_not_logged_in_notification.ps1'
+    $AgentDest = "$twingatePath\user_not_logged_in_notification.ps1"
+    Invoke-WebRequest $AgentURI -OutFile $AgentDest -UseBasicParsing
+
+    # Create the vbscript file that's used to run the Powershell script
+    
+    # This is super hacky, but the scheduled task needs to run as the logged in user
+    # in order for the toast notification to work, and also Powershell scripts 
+    # cause a shell window to spawn so you get a nasty flash of a window coming up.
+    
+    # Having the task run wscript and a vbs file that runs the ps1 file is a roundabout
+    # way of avoiding all of that while still running the script in the user space.
+
+    $checkUserVbsContent = @"
+Set objShell = CreateObject("WScript.Shell")
+objShell.Run "powershell.exe -ExecutionPolicy Bypass -File ""$twingateClientPath\user_not_logged_in_notification.ps1"" $checkUserResourceURL $checkUserResourceMethod", 0, False
+"@
+
+    if (-not (Get-Item -Path "$twingateClientPath\user_not_logged_in_notification.vbs" -ErrorAction SilentlyContinue)) {
+        Write-Host [+] Creating VBS script
+        New-Item "$twingateClientPath\user_not_logged_in_notification.vbs" -ItemType File -Value $checkUserVbsContent
+    } else {
+        Write-Host [+] VBS script already exists, deleting and recreating
+        Remove-Item "$twingateClientPath\user_not_logged_in_notification.vbs" -Force
+        New-Item "$twingateClientPath\user_not_logged_in_notification.vbs" -ItemType File -Value $checkUserVbsContent
+    }
+    Write-Host [+] Finished installing VBS script
+
+    # Create the scheduled task to run the script
+    Write-Host [+] Creating scheduled task to check if user is logged in
+    $checkUserTaskAction = New-ScheduledTaskAction -Execute "wscript" -Argument """$twingateClientPath\user_not_logged_in_notification.vbs"""
+    $checkUserTaskTrigger = @(
+        $(New-ScheduledTaskTrigger -Once -At 12:01AM -RepetitionInterval (New-TimeSpan -Minutes $checkUserFrequency)),
+        $(New-ScheduledTaskTrigger -Daily -At 12:01AM),
+        $(New-ScheduledTaskTrigger -AtStartup)
+    )
+    $checkUserTaskSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
+    $checkUserTaskPrincipal = New-ScheduledTaskPrincipal -GroupId "BUILTIN\Users" -RunLevel Highest
+    Register-ScheduledTask -TaskName $checkUserTaskName -Description $checkUserTaskDescription -Action $checkUserTaskaction -Trigger $checkUserTaskTrigger -Settings $checkUserTaskSettings -Principal $checkUserTaskPrincipal
+    Write-Host [+] Finished creating scheduled task to check if user is logged in
+
+    # Start the scheduled task
+    Write-Host [+] Starting Task to check if user is logged in
+    Start-ScheduledTask -TaskName $checkUserTaskName
+} else {
+    Write-Host [+] User Logged in flag not set, skipping scheduled task creation
+}
+
+
 
 # Promote the Twingate icon in the Windows registry, Windows 11 only
 Write-Host [+] Trying to promote Twingate icon in the Windows registry
