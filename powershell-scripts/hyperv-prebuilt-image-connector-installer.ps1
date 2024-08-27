@@ -34,25 +34,62 @@ $ProgressPreference = "SilentlyContinue"
 ##          Main Script          ##
 ###################################
 
-# Check for Hyper-V and install if not installed
-if (-not (Get-WindowsOptionalFeature -FeatureName Microsoft-Hyper-V-All -Online)) {
-    # Prompt user to see if they want to install Hyper-V or not
-    $installHyperV = Read-Host "[+] Hyper-V is not installed. Do you want to install Hyper-V? (WARNING: This will initiate a restart) (Y/N)"
-    if ($installHyperV -eq "Y") {
-        Write-Host "[+] Installing Hyper-V..."
-        Install-WindowsFeature -Name Hyper-V -IncludeManagementTools
-        Write-Host "[+] Hyper-V has been installed. In order to continue with the installation a system reboot needs to be performed."
-        Write-Host "[+] Please save your data in all other programs before continuing.  Once the system has rebooted please run this script again."
-        Write-Host " "
-        Write-Host " "
-        Read-Host "******WHEN READY TO REBOOT PRESS ENTER******"
-        Restart-Computer
+# Check to see if the script is running on Windows Desktop or Server
+if (Get-Command -Name Install-WindowsFeature -ErrorAction SilentlyContinue) {
+    Write-Host "[+] Windows Server detected..."
+    $osType = "Server"
+} elseif (Get-Command -Name Enable-WindowsOptionalFeature -ErrorAction SilentlyContinue) {
+    Write-Host "[+] Windows Desktop detected..."
+    $osType = "Desktop"
+}
+
+# Check for Hyper-V 
+if ($osType -eq "Server") {
+    if (-not (Get-WindowsFeature -Name Hyper-V)) {
+        $installHyperV = Read-Host "[-] Hyper-V is not installed. Do you want to install Hyper-V? (WARNING: This will initiate a restart) (Y/N)"
+
+        # Install Hyper-V if it's not already installed
+        if ($installHyperV -eq "Y") {
+            Write-Host "[+] Installing Hyper-V..."
+            Install-WindowsFeature -Name Hyper-V -IncludeManagementTools
+            Write-Host "[+] Hyper-V has been installed. In order to continue with the installation a system reboot needs to be performed."
+            Write-Host "[+] Please save your data in all other programs before continuing.  Once the system has rebooted please run this script again."
+            Write-Host " "
+            Write-Host " "
+            Read-Host "******WHEN READY TO REBOOT PRESS ENTER******"
+            Restart-Computer
+        } else {
+            Write-Host "[-] Hyper-V is required for this script to run. Exiting script."
+            Exit
+        }
     } else {
-        Write-Host "[-] Hyper-V is required for this script to run. Exiting script."
-        Exit
+        Write-Host "[+] Hyper-V is already installed. Continuing installation..."
     }
+    
+} elseif ($osType -eq "Desktop") {
+    if (-not (Get-WindowsOptionalFeature -FeatureName Microsoft-Hyper-V-All -Online)) {
+        $installHyperV = Read-Host "[-] Hyper-V is not installed. Do you want to install Hyper-V? (WARNING: This will initiate a restart) (Y/N)"
+
+        # Install Hyper-V if it's not already installed
+        if ($installHyperV -eq "Y") {
+            Write-Host "[+] Installing Hyper-V..."
+            Enable-WindowsOptionalFeature -FeatureName "Microsoft-Hyper-V-All" -All -Online
+            Write-Host "[+] Hyper-V has been installed. In order to continue with the installation a system reboot needs to be performed."
+            Write-Host "[+] Please save your data in all other programs before continuing.  Once the system has rebooted please run this script again."
+            Write-Host " "
+            Write-Host " "
+            Read-Host "******WHEN READY TO REBOOT PRESS ENTER******"
+            Restart-Computer
+        } else {
+            Write-Host "[-] Hyper-V is required for this script to run. Exiting script."
+            Exit
+        }
+    } else {
+        Write-Host "[+] Hyper-V is already installed. Continuing installation..."
+    } 
 } else {
-    Write-Host "[+] Hyper-V is already installed. Continuing installation..."
+    Write-Host "[-] Unable to determine OS type. Exiting script."
+    Exit
 }
 
 # Check to see if Posh-SSH is installed, this is used to send SSH commands to the running VM
@@ -146,6 +183,9 @@ $session = New-SSHSession -ComputerName $vmHostName -Credential $credential -Acc
 (Invoke-SSHCommand -SessionId $session.SessionId -Command "sudo apt update | sudo apt upgrade -y").Output
 (Invoke-SSHCommand -SessionId $session.SessionId -Command "sudo apt install -y curl").Output
 (Invoke-SSHCommand -SessionId $session.SessionId -Command "curl 'https://binaries.twingate.com/connector/setup.sh' | sudo TWINGATE_ACCESS_TOKEN='$accessToken' TWINGATE_REFRESH_TOKEN='$refreshToken' TWINGATE_NETWORK='$networkName' TWINGATE_LABEL_DEPLOYED_BY='hyperv-deploy-script' bash").Output
+(Invoke-SSHCommand -SessionId $session.SessionId -Command "sudo chmod -R 0777 /etc/twingate").Output
+(Invoke-SSHCommand -SessionId $session.SessionId -Command "sudo echo 'TWINGATE_LABEL_DEPLOYED_BY=hyperv-deploy-script' >> /etc/twingate/connector.conf").Output
+(Invoke-SSHCommand -SessionId $session.SessionId -Command "sudo systemctl restart twingate-connector").Output
 
 # Assuming everything worked, end the script
 Write-Host "[+] Bash commands executed inside the VM."
