@@ -23,7 +23,7 @@ $refreshToken = "80zwhsC-EdzaB...JoXkTM4dau10g"  # Your Twingate refresh token
 
 # The variables below don't need to be changed, as the script will automatically download the archive and put it into the path below
 $vmName = "Twingate_Connector_Ubuntu-22_04"
-$archiveURI = "https://drive.google.com/file/d/1oat2fBkDw89RHZ_nvAWC3csnOq5W8kX3/view?usp=sharing"
+$archiveURI = # TDB - For testing just download the archive and put it in c:\windows\temp
 $archivePath = "C:\windows\temp\Twingate_Connector_Ubuntu-22_04.zip"  # Path to your ZIP archive
 $vmExtractPath = "C:\twingate-connector-hyperv"  # Path to extract the VM files
 
@@ -117,8 +117,8 @@ if ($vmConfigFiles.Count -eq 0) {
 }
 
 # Import the VM
-Write-Host $vmConfigFiles
-Import-VM -Path $vmConfigFiles
+Write-Host $vmConfigFiles.FullName
+Import-VM -Path $vmConfigFiles.FullName
 
 # Attach the VM to the external switch
 Write-Host " "
