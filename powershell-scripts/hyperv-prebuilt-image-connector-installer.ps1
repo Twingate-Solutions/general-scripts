@@ -22,9 +22,9 @@ $accessToken = "eyJhbGciOiJFUzI1NiIsIm...pPyRTuSTj-DymF8mmEaQqasJauB-5KMQ"
 $refreshToken = "80zwhsC-EdzaB...JoXkTM4dau10g"  # Your Twingate refresh token
 
 # The variables below don't need to be changed, as the script will automatically download the archive and put it into the path below
-$vmName = "Twingate_Connector_Ubuntu-22_04"
+$vmName = "Ubuntu_Twingate_Connector-22_04"
 $archiveURI = # TDB - For testing just download the archive and put it in c:\windows\temp
-$archivePath = "C:\windows\temp\Twingate_Connector_Ubuntu-22_04.zip"  # Path to your ZIP archive
+$archivePath = "C:\windows\temp\Ubuntu_Twingate_Connector-22_04.zip"  # Path to your ZIP archive
 $vmExtractPath = "C:\twingate-connector-hyperv"  # Path to extract the VM files
 
 # Disable the WebRequest progress bar, speeds up downloads
@@ -33,6 +33,13 @@ $ProgressPreference = "SilentlyContinue"
 ###################################
 ##          Main Script          ##
 ###################################
+
+
+
+# ********************TO DO********************
+# The check below doesn't fully work, it seems the Install-WindowsFeature cmdlet is available on W11
+# but it doesn't work since it's not a server OS, so I need to find a better way to check for the OS type
+# ********************************************
 
 # Check to see if the script is running on Windows Desktop or Server
 if (Get-Command -Name Install-WindowsFeature -ErrorAction SilentlyContinue) {
@@ -161,7 +168,7 @@ Import-VM -Path $vmConfigFiles.FullName
 Write-Host " "
 Write-Host " "
 Write-Host "[+] Attaching the VM to the external switch..."
-Get-VM "Twingate_Connector_Ubuntu-22_04" | Get-VMNetworkAdapter | Connect-VMNetworkAdapter -SwitchName $vmSwitchName
+Get-VM $vmName | Get-VMNetworkAdapter | Connect-VMNetworkAdapter -SwitchName $vmSwitchName
 
 # Start the VM
 Write-Host "[+] Starting VM..."
@@ -178,7 +185,7 @@ $username = "twingate"
 $password = "twingate"  | ConvertTo-SecureString -AsPlainText -Force
 $credential = New-Object System.Management.Automation.PSCredential($username, $password)
 
-$session = New-SSHSession -ComputerName $vmHostName -Credential $credential -AcceptKey
+$session = New-SSHSession -ComputerName $vmHostName -Credential $credential -AcceptKey:$true -Force:$true
 
 (Invoke-SSHCommand -SessionId $session.SessionId -Command "sudo apt update | sudo apt upgrade -y").Output
 (Invoke-SSHCommand -SessionId $session.SessionId -Command "sudo apt install -y curl").Output
@@ -186,6 +193,17 @@ $session = New-SSHSession -ComputerName $vmHostName -Credential $credential -Acc
 (Invoke-SSHCommand -SessionId $session.SessionId -Command "sudo chmod -R 0777 /etc/twingate").Output
 (Invoke-SSHCommand -SessionId $session.SessionId -Command "sudo echo 'TWINGATE_LABEL_DEPLOYED_BY=hyperv-deploy-script' >> /etc/twingate/connector.conf").Output
 (Invoke-SSHCommand -SessionId $session.SessionId -Command "sudo systemctl restart twingate-connector").Output
+
+# *******************TO DO********************
+# Build the cron job into the base image
+# This way don't have to invoke the commands below
+# ********************************************
+(Invoke-SSHCommand -SessionId $session.SessionId -Command "sudo tee -a /etc/cron.weekly/update-twingate-connector > /dev/null <<EOF
+#!/bin/bash
+sudo  -- sh -c 'apt update && apt install -yq twingate-connector && systemctl restart twingate-connector'
+EOF").Output
+(Invoke-SSHCommand -SessionId $session.SessionId -Command "sudo chmod +x /etc/cron.weekly/update-twingate-connector").Output
+
 
 # Assuming everything worked, end the script
 Write-Host "[+] Bash commands executed inside the VM."
