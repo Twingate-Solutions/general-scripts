@@ -194,16 +194,5 @@ $session = New-SSHSession -ComputerName $vmHostName -Credential $credential -Acc
 (Invoke-SSHCommand -SessionId $session.SessionId -Command "sudo echo 'TWINGATE_LABEL_DEPLOYED_BY=hyperv-deploy-script' >> /etc/twingate/connector.conf").Output
 (Invoke-SSHCommand -SessionId $session.SessionId -Command "sudo systemctl restart twingate-connector").Output
 
-# *******************TO DO********************
-# Build the cron job into the base image
-# This way don't have to invoke the commands below
-# ********************************************
-(Invoke-SSHCommand -SessionId $session.SessionId -Command "sudo tee -a /etc/cron.weekly/update-twingate-connector > /dev/null <<EOF
-#!/bin/bash
-sudo  -- sh -c 'apt update && apt install -yq twingate-connector && systemctl restart twingate-connector'
-EOF").Output
-(Invoke-SSHCommand -SessionId $session.SessionId -Command "sudo chmod +x /etc/cron.weekly/update-twingate-connector").Output
-
-
 # Assuming everything worked, end the script
 Write-Host "[+] Bash commands executed inside the VM."
