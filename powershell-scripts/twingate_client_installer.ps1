@@ -1,6 +1,10 @@
 # This script is designed to install or update the Twingate Windows client application.
 # It can be run locally as a scheduled task, or pushed remotely via a tool like Intune.
 
+# Note: This script is provided as-is, and is intended to be used as a starting point for your own deployment scripts.
+# It is meant to be run via Powershell 5.x on Windows 10 or 11, and parts may not function on other versions of Windows
+# or Powershell.  It is recommended to test this script in a lab environment before deploying to production.
+
 # The script has a couple of optional features:
 # - It can first uninstall the client app before re-installing it from scratch
 # - It can install a machinekey.conf to enforce always-on connectivity (mostly for Twingate Internet Security)
@@ -59,6 +63,11 @@ $checkUserTaskDescription = "This task will periodically check to see if the use
 $checkUserFrequency = 30 # How often to check if the user is logged in, in minutes
 $checkUserResourceURL = "http://internal.domain.com" # The Resource URL to check if the user is logged in, see the user_not_logged_in_notification.ps1 script for more details
 $checkUserResourceMethod = "get" # The method to use to check the Resource URL, either 'get' or 'ping'
+
+# If you need to add a DNS search domain to the Twingate TAP adapter, enable the option below and add it to the variable.
+# This is useful if you have internal DNS domains that need to be resolved by the Twingate client.
+$addDNSSearchDomain = $false
+$dnsSearchDomain = "test.domain.com"
 
 ###################################
 ##         Set Variables         ##
@@ -270,8 +279,6 @@ objShell.Run "powershell.exe -ExecutionPolicy Bypass -File ""$twingateClientPath
     Write-Host [+] User Logged in flag not set, skipping scheduled task creation
 }
 
-
-
 # Promote the Twingate icon in the Windows registry, Windows 11 only
 Write-Host [+] Trying to promote Twingate icon in the Windows registry
 Set-TwingateNotifyIconPromoted
@@ -279,6 +286,18 @@ foreach ($result in $results) {
     Write-Host "Registry Key: $($result.RegistryKey)"
     Write-Host "ExecutablePath: $($result.ExecutablePath)"
     Write-Host ""
+}
+
+# Set the DNS search domain for the Twingate TAP adapter
+if ($addDNSSearchDomain) {
+    Write-Host [+] Adding DNS search domains to the Twingate TAP adapter
+    $tapAdapter = Get-NetAdapter | Where-Object {$_.InterfaceDescription -like "*Twingate*"}
+    if ($tapAdapter) {
+        Set-DnsClient -InterfaceAlias 'Twingate' -ConnectionSpecificSuffix $dnsSearchDomain
+        Write-Host [+] Finished adding DNS search domains to the Twingate TAP adapter
+    } else {
+        Write-Host [+] Twingate TAP adapter not found, skipping DNS search domain addition
+    }
 }
 
 # Finished running the script
