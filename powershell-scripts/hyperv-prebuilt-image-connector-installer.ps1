@@ -23,7 +23,7 @@ $refreshToken = "80zwhsC-EdzaB...JoXkTM4dau10g"  # Your Twingate refresh token
 
 # The variables below don't need to be changed, as the script will automatically download the archive and put it into the path below
 $vmName = "Ubuntu_Twingate_Connector-22_04"
-$archiveURI = # TDB - For testing just download the archive and put it in c:\windows\temp
+$archiveURI = "https://github.com/Twingate-Solutions/general-scripts/releases/download/hyperv-image/Ubuntu_Twingate_Connector-22_04.zip" # URL of the current VM archive
 $archivePath = "C:\windows\temp\Ubuntu_Twingate_Connector-22_04.zip"  # Path to your ZIP archive
 $vmExtractPath = "C:\twingate-connector-hyperv"  # Path to extract the VM files
 
