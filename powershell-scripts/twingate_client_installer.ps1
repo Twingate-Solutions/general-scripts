@@ -150,13 +150,30 @@ if ($dotnetRuntime -ne $null) {
 } else {
     # Installing the .NET Desktop Runtime
     Write-Host [+] .NET Desktop Runtime 6.0 is not installed
-    Write-Host [+] Downloading .NET Desktop Runtime
+    Write-Host [+] Downloading .NET 6.0 Desktop Runtime
     $AgentURI = 'https://download.visualstudio.microsoft.com/download/pr/a1da19dc-d781-4981-84e9-ffa0c05e00e9/46f3cd2015c27a0e93d7c102a711577e/windowsdesktop-runtime-6.0.31-win-x64.exe'
     $AgentDest = 'C:\Windows\Temp\windowsdesktop-runtime-6.0.31-win-x64.exe'
     Invoke-WebRequest $AgentURI -OutFile $AgentDest -UseBasicParsing
-    Write-Host [+] Installing the .NET Desktop Runtime
+    Write-Host [+] Installing the .NET 6.0 Desktop Runtime
     cmd /c "C:\Windows\Temp\windowsdesktop-runtime-6.0.31-win-x64.exe /install /quiet /norestart"
-    Write-Host [+] Finished installing .NET Desktop Runtime
+    Write-Host [+] Finished installing .NET 6.0 Desktop Runtime
+}
+
+# Check to see if the .NET Desktop Runtime 8.0 is already installed
+Write-Host [+] Checking if .NET Desktop Runtime 8.0 is already installed
+$dotnetRuntime = Get-WmiObject -Query "SELECT * FROM Win32_Product WHERE Name LIKE '%.NET%Runtime%8.%.%'"
+if ($dotnetRuntime -ne $null) {
+    Write-Host [+] .NET Desktop Runtime 8.0 is already installed
+} else {
+    # Installing the .NET Desktop Runtime
+    Write-Host [+] .NET Desktop Runtime 8.0 is not installed
+    Write-Host [+] Downloading .NET 8.0 Desktop Runtime
+    $AgentURI = 'https://download.visualstudio.microsoft.com/download/pr/f398d462-9d4e-4b9c-abd3-86c54262869a/4a8e3a10ca0a9903a989578140ef0499/windowsdesktop-runtime-8.0.10-win-x64.exe'
+    $AgentDest = 'C:\Windows\Temp\windowsdesktop-runtime-8.0.10-win-x64.exe'
+    Invoke-WebRequest $AgentURI -OutFile $AgentDest -UseBasicParsing
+    Write-Host [+] Installing the .NET 8.0 Desktop Runtime
+    cmd /c "C:\Windows\Temp\windowsdesktop-runtime-8.0.10-win-x64.exe /install /quiet /norestart"
+    Write-Host [+] Finished installing .NET 8.0 Desktop Runtime
 }
 
 # Installing the Twingate Client
