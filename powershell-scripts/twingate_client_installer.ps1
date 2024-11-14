@@ -136,7 +136,7 @@ if ((Get-Process -Name "Twingate" -ErrorAction SilentlyContinue) -And (Get-Servi
 # This is useful if you want to ensure a clean install
 if ($uninstallFirst) {
     Write-Host [+] Uninstall flag set, uninstalling Twingate Client application
-    $twingateApp = Get-WmiObject -Class Win32_Product | Where-Object{$_.Name.Contains("Twingate")}
+    $twingateApp = Get-WmiObject -Class Win32_Product -Filter 'Name LIKE "%Twingate%"'
     if ($twingateApp) {
         $twingateApp.Uninstall()
     }
@@ -145,7 +145,7 @@ if ($uninstallFirst) {
 # Check to see if the .NET Desktop Runtime 6.0 is already installed
 Write-Host [+] Checking if .NET Desktop Runtime 6.0 is already installed
 $dotnetRuntime = Get-WmiObject -Query "SELECT * FROM Win32_Product WHERE Name LIKE '%.NET%Runtime%6.%.%'"
-if ($dotnetRuntime -ne $null) {
+if ($null -ne $dotnetRuntime) {
     Write-Host [+] .NET Desktop Runtime 6.0 is already installed
 } else {
     # Installing the .NET Desktop Runtime
@@ -162,7 +162,7 @@ if ($dotnetRuntime -ne $null) {
 # Check to see if the .NET Desktop Runtime 8.0 is already installed
 Write-Host [+] Checking if .NET Desktop Runtime 8.0 is already installed
 $dotnetRuntime = Get-WmiObject -Query "SELECT * FROM Win32_Product WHERE Name LIKE '%.NET%Runtime%8.%.%'"
-if ($dotnetRuntime -ne $null) {
+if ($null -ne $dotnetRuntime) {
     Write-Host [+] .NET Desktop Runtime 8.0 is already installed
 } else {
     # Installing the .NET Desktop Runtime
