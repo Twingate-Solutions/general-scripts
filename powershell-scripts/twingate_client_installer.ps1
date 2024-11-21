@@ -214,7 +214,7 @@ if ($createScheduledTask) {
     }
     Write-Host [+] Scheduled Task flag set, creating scheduled task
     Write-Host [+] Creating scheduled task
-    $action = New-ScheduledTaskAction -Execute "$twingateClientPath\twingate.exe"
+    $action = New-ScheduledTaskAction -Execute "$twingateClientPath\Twingate.exe"
     $taskTrigger = @(
         $(New-ScheduledTaskTrigger -Once -At 12:01AM -RepetitionInterval (New-TimeSpan -Minutes $taskMinutes)),
         $(New-ScheduledTaskTrigger -Daily -At 12:01AM),
