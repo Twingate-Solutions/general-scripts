@@ -64,6 +64,15 @@ $checkUserFrequency = 30 # How often to check if the user is logged in, in minut
 $checkUserResourceURL = "http://internal.domain.com" # The Resource URL to check if the user is logged in, see the user_not_logged_in_notification.ps1 script for more details
 $checkUserResourceMethod = "get" # The method to use to check the Resource URL, either 'get' or 'ping'
 
+# If you would like this script to spawn a scheduled task to run in the future and attempt to automatically update the client
+# then set the flag below to true, and specify how many days between updates.  It is not recommended to run more often than monthly,
+# and you are safe to run up to 60 or 90 days between updates.
+$autoUpdate = $false
+$updateDays = 30
+$autoUpdateTaskName = "Twingate Client Auto Update"
+$autoUpdateTaskDescription = "This task will check every $updateDays days to see if the Twingate client needs to be updated, and update it if necessary."
+
+
 # If you need to add a DNS search domain to the Twingate TAP adapter, enable the option below and add it to the variable.
 # This is useful if you have internal DNS domains that need to be resolved by the Twingate client.
 $addDNSSearchDomain = $false
@@ -76,7 +85,7 @@ $dnsSearchDomain = "test.domain.com"
 # Twingate network subnet name, ie the subdomain part of networkname.twingate.com when you log in to the Admin Console
 # It's important to change this to your network subnet name if you want to auto-populate it.
 # If you are installing a machinekey.conf then that will override this.
-$twingateNetworkName = "networkname" 
+$twingateNetworkName = "network" 
 
 # Path to the Twingate client executable post-installation
 $twingateClientPath = "C:\Program Files\Twingate"
@@ -206,6 +215,43 @@ if ($createMachineKey) {
     Write-Host [+] Finished installing machinekey.conf
 }
 
+# If the autoUpdate variable is set to true, then create a task and duplicate this script to run in the future
+if ($autoUpdate) {
+    if (Get-ScheduledTask -TaskName $autoUpdateTaskName -ErrorAction SilentlyContinue) {
+        Write-Host [+] Auto update task already exists, removing and recreating
+        Unregister-ScheduledTask -TaskName $autoUpdateTaskName -Confirm:$false
+    }
+    Write-Host [+] Auto update task flag set, creating local copy of deployment Powershell script
+    $MyInvocation.MyCommand.ScriptContents | Out-File -FilePath "$twingateClientPath\twingate_client_installer.ps1" -Force
+
+    Write-Host [+] Creating auto update vbs file to trigger Powershell script
+    $autoUpdateVbsContent = @"
+Set objShell = CreateObject("WScript.Shell")
+objShell.Run "powershell.exe -ExecutionPolicy Bypass -File ""$twingateClientPath\twingate_client_installer.ps1""", 0, False
+"@
+
+    if (-not (Get-Item -Path "$twingateClientPath\auto-update.vbs" -ErrorAction SilentlyContinue)) {
+        Write-Host [+] Creating VBS script
+        New-Item "$twingateClientPath\auto-update.vbs" -ItemType File -Value $autoUpdateVbsContent
+    } else {
+        Write-Host [+] VBS script already exists, deleting and recreating
+        Remove-Item "$twingateClientPath\auto-update.vbs" -Force
+        New-Item "$twingateClientPath\auto-update.vbs" -ItemType File -Value $autoUpdateVbsContent
+    }
+
+    Write-Host [+] Creating scheduled task to auto update
+    $action = New-ScheduledTaskAction -Execute "$twingateClientPath\auto-update.vbs"
+
+    $taskTrigger = @(
+        $(New-ScheduledTaskTrigger -Daily -At 12:01AM -DaysInterval $updateDays)
+    )
+    $taskSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
+    $taskPrincipal = New-ScheduledTaskPrincipal -UserId "NT AUTHORITY\SYSTEM" -LogonType ServiceAccount
+    Register-ScheduledTask -TaskName $autoUpdateTaskName -Description $autoUpdateTaskDescription -Action $action -Trigger $taskTrigger -Settings $taskSettings -Principal $taskPrincipal
+    Write-Host [+] Finished creating auto update scheduled task
+}
+
+
 # If the createScheduledTask variable is set to true, then create the scheduled task
 if ($createScheduledTask) {
     if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) {
@@ -230,12 +276,25 @@ if ($createScheduledTask) {
     Start-ScheduledTask -TaskName $taskName
     Start-Service -Name $twingateServiceName -ErrorAction SilentlyContinue
 } else {
+    if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) {
+        Write-Host [+] Scheduled Task already exists, removing and recreating
+        Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
+    }	
     Write-Host [+] Scheduled Task flag not set, skipping scheduled task creation
-
+    
     # Start the Twingate service and application
     Write-Host [+] Starting Twingate Client
-    Start-Process -FilePath "$twingateClientPath\twingate.exe"
-    Start-Service -Name $twingateServiceName -ErrorAction SilentlyContinue
+	Start-Service -Name $twingateServiceName -ErrorAction SilentlyContinue
+
+    # Create a scheduled task just to start the app in the user space
+	$action = New-ScheduledTaskAction -Execute "$twingateClientPath\Twingate.exe"
+    $taskTrigger = @(
+        $(New-ScheduledTaskTrigger -Once -At 12:01AM -RepetitionInterval (New-TimeSpan -Minutes $taskMinutes))
+    )
+    $taskSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
+    $taskPrincipal = New-ScheduledTaskPrincipal -GroupId "BUILTIN\Users"
+    Register-ScheduledTask -TaskName $taskName -Description $taskDescription -Action $action -Trigger $taskTrigger -Settings $taskSettings -Principal $taskPrincipal
+	Start-ScheduledTask -TaskName $taskName
 }
 
 # If the checkUserLoggedIn variable is set to true, then create the scheduled task to check if the user is logged in
@@ -249,18 +308,10 @@ if ($checkUserLoggedIn) {
     # Download the script file and put in the new Twingate Client folder
     Write-Host [+] Downloading user_not_logged_in_notification.ps1
     $AgentURI = 'https://raw.githubusercontent.com/Twingate-Solutions/general-scripts/main/powershell-scripts/user_not_logged_in_notification.ps1'
-    $AgentDest = "$twingatePath\user_not_logged_in_notification.ps1"
+    $AgentDest = "$twingateClientPath\user_not_logged_in_notification.ps1"
     Invoke-WebRequest $AgentURI -OutFile $AgentDest -UseBasicParsing
 
     # Create the vbscript file that's used to run the Powershell script
-    
-    # This is super hacky, but the scheduled task needs to run as the logged in user
-    # in order for the toast notification to work, and also Powershell scripts 
-    # cause a shell window to spawn so you get a nasty flash of a window coming up.
-    
-    # Having the task run wscript and a vbs file that runs the ps1 file is a roundabout
-    # way of avoiding all of that while still running the script in the user space.
-
     $checkUserVbsContent = @"
 Set objShell = CreateObject("WScript.Shell")
 objShell.Run "powershell.exe -ExecutionPolicy Bypass -File ""$twingateClientPath\user_not_logged_in_notification.ps1"" $checkUserResourceURL $checkUserResourceMethod", 0, False
