@@ -11,7 +11,7 @@
 # - It can create a scheduled task to auto-start the Twingate client application if it's ever quit by the user
 
 # By default the script will always check to see if the Twingate client application is running, and kill it.  It will
-# also check to see if the .NET Desktop Runtime 6.0 is installed, and install it if it is not.
+# also check to see if the .NET Desktop Runtime is installed, and install it if it is not.
 
 ###################################
 ##  Configure Optional Features  ##
@@ -149,23 +149,6 @@ if ($uninstallFirst) {
     if ($twingateApp) {
         $twingateApp.Uninstall()
     }
-}
-
-# Check to see if the .NET Desktop Runtime 6.0 is already installed
-Write-Host [+] Checking if .NET Desktop Runtime 6.0 is already installed
-$dotnetRuntime = Get-WmiObject -Query "SELECT * FROM Win32_Product WHERE Name LIKE '%.NET%Runtime%6.%.%'"
-if ($null -ne $dotnetRuntime) {
-    Write-Host [+] .NET Desktop Runtime 6.0 is already installed
-} else {
-    # Installing the .NET Desktop Runtime
-    Write-Host [+] .NET Desktop Runtime 6.0 is not installed
-    Write-Host [+] Downloading .NET 6.0 Desktop Runtime
-    $AgentURI = 'https://download.visualstudio.microsoft.com/download/pr/a1da19dc-d781-4981-84e9-ffa0c05e00e9/46f3cd2015c27a0e93d7c102a711577e/windowsdesktop-runtime-6.0.31-win-x64.exe'
-    $AgentDest = 'C:\Windows\Temp\windowsdesktop-runtime-6.0.31-win-x64.exe'
-    Invoke-WebRequest $AgentURI -OutFile $AgentDest -UseBasicParsing
-    Write-Host [+] Installing the .NET 6.0 Desktop Runtime
-    cmd /c "C:\Windows\Temp\windowsdesktop-runtime-6.0.31-win-x64.exe /install /quiet /norestart"
-    Write-Host [+] Finished installing .NET 6.0 Desktop Runtime
 }
 
 # Check to see if the .NET Desktop Runtime 8.0 is already installed
