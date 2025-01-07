@@ -6,7 +6,22 @@
 # It is meant to be run on MacOS 15 Sequoia, and may require modification to work in your environment.  
 # It is recommended to test this script in a lab environment before deploying to production machines.
 
-# THe script has a couple of optional features:
+
+###################################
+##  IMPORTANT NOTES BEFORE USE   ##
+###################################
+# Before running this script it is expected that you've already pushed a profile to the device via your MDM
+# that allows the system extension to be installed without user intervention.  This is important if
+# your users do not have local admin permissions, as it's a required step in order for the Twingate client to 
+# install and run correctly.
+
+# You can find a sample mobileconfig profile at https://www.twingate.com/docs/macos-standalone-client#pre-enabling-the-system-extension
+
+# Make sure to push this profile out prior to the script being run, so that the Twingate client can be installed
+# and run without the user having to approve the system extension.
+
+
+# The script has a couple of optional features:
 # - Uninstall Twingate client before reinstalling
 # - Set machine key configuration for always-on connectivity
 # - Create a LaunchDaemon to auto-restart the Twingate client
@@ -92,18 +107,145 @@ install_twingate() {
   echo "[+] Installing Twingate Client..."
   sudo installer -pkg /tmp/TwingateInstaller.pkg -target /
 
-  # Create a plist file to configure the Twingate client
+  # Create a plist file to configure the Twingate client according to https://www.twingate.com/docs/macos-and-ios#configuring-twingate-with-custom-configuration-profiles
   sudo tee "/Library/Preferences/com.twingate.macos.plist" > /dev/null <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>startAtLogin</key>
-    <true/>
-    <key>network</key>
-    <string>$twingateNetworkName</string> <!-- Use the network name from the main script settings -->
-    <key>SUEnableAutomaticChecks</key> <!-- Disable automatic updates -->
-    <false/>
+	<key>PayloadContent</key>
+	<array>
+		<dict>
+			<key>PayloadDisplayName</key>
+			<string>Twingate VPN</string>
+			<key>PayloadIdentifier</key>
+			<string>com.apple.vpn.managed.F5473AE0-B40B-4518-A060-4D6922142916</string>
+			<key>PayloadType</key>
+			<string>com.apple.vpn.managed</string>
+			<key>PayloadUUID</key>
+			<string>F5473AE0-B40B-4518-A060-4D6922142916</string>
+			<key>PayloadVersion</key>
+			<integer>1</integer>
+			<key>UserDefinedName</key>
+			<string>Twingate</string>
+			<key>VPN</key>
+			<dict>
+				<key>AuthenticationMethod</key>
+				<string>Password</string>
+				<key>ProviderBundleIdentifier</key>
+				<string>com.twingate.macos.tunnelprovider</string>
+				<key>ProviderDesignatedRequirement</key>
+				<string>anchor apple generic and identifier "com.twingate.macos.tunnelprovider" and (certificate leaf[field.1.2.840.113635.100.6.1.9] /* exists */ or certificate 1[field.1.2.840.113635.100.6.2.6] /* exists */ and certificate leaf[field.1.2.840.113635.100.6.1.13] /* exists */ and certificate leaf[subject.OU] = "6GX8KVTR9H")</string>
+				<key>RemoteAddress</key>
+				<string>null</string>
+			</dict>
+			<key>VPNSubType</key>
+			<string>com.twingate.macos</string>
+			<key>VPNType</key>
+			<string>VPN</string>
+		</dict>
+		<dict>
+			<key>PayloadDisplayName</key>
+			<string>Twingate</string>
+			<key>PayloadIdentifier</key>
+			<string>com.twingate.macos.E5640205-1048-4E95-82C0-13FF9D7168CB</string>
+			<key>PayloadType</key>
+			<string>com.twingate.macos</string>
+			<key>PayloadUUID</key>
+			<string>E5640205-1048-4E95-82C0-13FF9D7168CB</string>
+			<key>PayloadVersion</key>
+			<integer>1</integer>
+			<key>automaticallyInstallSystemExtension</key>
+			<true/>
+			<key>SUEnableAutomaticChecks</key>
+			<false/>
+      <key>startAtLogin</key>
+      <true/>      
+			<key>PresentedDataPrivacy</key>
+			<true/>
+			<key>PresentedEducation</key>
+			<true/>
+			<key>network</key>
+			<string>$twingateNetworkName</string> <!-- Use the network name from the main script settings -->
+		</dict>
+		<dict>
+			<key>NotificationSettings</key>
+			<array>
+				<dict>
+					<key>BundleIdentifier</key>
+					<string>com.twingate.macos</string>
+					<key>NotificationsEnabled</key>
+					<true/>
+				</dict>
+			</array>
+			<key>PayloadDisplayName</key>
+			<string>Notifications</string>
+			<key>PayloadIdentifier</key>
+			<string>com.apple.notificationsettings.23668A72-3BD2-458F-9A90-D91A332985DF</string>
+			<key>PayloadType</key>
+			<string>com.apple.notificationsettings</string>
+			<key>PayloadUUID</key>
+			<string>23668A72-3BD2-458F-9A90-D91A332985DF</string>
+			<key>PayloadVersion</key>
+			<integer>1</integer>
+		</dict>
+		<dict>
+			<key>PayloadDisplayName</key>
+			<string>Background Items</string>
+			<key>PayloadIdentifier</key>
+			<string>com.apple.servicemanagement.634A0CE2-4A0B-49CB-B73E-9337DC6F5E69</string>
+			<key>PayloadType</key>
+			<string>com.apple.servicemanagement</string>
+			<key>PayloadUUID</key>
+			<string>634A0CE2-4A0B-49CB-B73E-9337DC6F5E69</string>
+			<key>PayloadVersion</key>
+			<integer>1</integer>
+			<key>Rules</key>
+			<array>
+				<dict>
+					<key>RuleType</key>
+					<string>TeamIdentifier</string>
+					<key>RuleValue</key>
+					<string>6GX8KVTR9H</string>
+				</dict>
+			</array>
+		</dict>
+		<dict>
+			<key>AllowUserOverrides</key>
+			<true/>
+			<key>AllowedSystemExtensions</key>
+			<dict>
+				<key>6GX8KVTR9H</key>
+				<array><string>com.twingate.macos.tunnelprovider</string></array>
+			</dict>
+			<key>PayloadDisplayName</key>
+			<string>System Extension Policy</string>
+			<key>PayloadIdentifier</key>
+			<string>com.apple.system-extension-policy.60145087-607E-428B-9B3E-831856156D78</string>
+			<key>PayloadType</key>
+			<string>com.apple.system-extension-policy</string>
+			<key>PayloadUUID</key>
+			<string>60145087-607E-428B-9B3E-831856156D78</string>
+			<key>PayloadVersion</key>
+			<integer>1</integer>
+		</dict>
+	</array>
+	<key>PayloadDescription</key>
+	<string>This Payload is used to allow a full silent install of the Twingate client.</string>
+	<key>PayloadDisplayName</key>
+	<string>Twingate Full Silent Install</string>
+	<key>PayloadIdentifier</key>
+	<string>com.twingate.macos.52104CA3-6289-47D7-A852-635A78CA69B5</string>
+	<key>PayloadOrganization</key>
+	<string>Twingate</string>
+	<key>PayloadRemovalDisallowed</key>
+	<true/>
+	<key>PayloadType</key>
+	<string>Configuration</string>
+	<key>PayloadUUID</key>
+	<string>044B0908-E76F-4B15-BADD-2547C290781D</string>
+	<key>PayloadVersion</key>
+	<integer>1</integer>
 </dict>
 </plist>
 EOF
