@@ -5,7 +5,7 @@ log_dir=~/Desktop/twingate_logs_$datetime
 user_log_dir="$log_dir/user_logs"
 system_log_dir="$log_dir/system_logs"
 mkdir -p "$user_log_dir" "$system_log_dir"
-log_file="$log_dir/system-info.log"
+log_file="$log_dir/system-detailed-info.log"
 
 exec > >(tee -a "$log_file") 2>&1
 
