@@ -30,9 +30,9 @@ log_command_output() {
     echo -e "\n### $1 ###"
     eval "$2"
 }
-
+log_command_output 'OS install history' "softwareupdate --history"
 log_command_output 'Twingate version detected' "cat '/Applications/Twingate.app/Contents/Info.plist' | grep -A1 -i 'fullversion'"
-log_command_output 'Twingate installation history' 
+log_command_output 'Twingate installation history' "'plutil -p /Library/Receipts/InstallHistory.plist' | grep -B5 -A3 'com.twingate.macos' > tg_install_history.txt"
 log_command_output 'Twingate processes' "ps aux | grep -i '[t]wingate'"
 log_command_output 'Launchctl List (Twingate)' "launchctl list | grep -i twingate"
 log_command_output 'List Open Files and Network Connections (lsof)' "lsof -c Twingate"
