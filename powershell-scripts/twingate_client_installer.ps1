@@ -49,10 +49,10 @@ machinekey
 
 # To create a scheduled task to auto-start the Twingate client application if it's ever quit by the user, set to true.
 # You can also choose how often to check if the Twingate client is running, and how often to restart it.
-$createScheduledTask = $false
-$taskName = "Twingate Client Restart"
-$taskDescription = "This task will check every 5 minutes to see if the Twingate client is running, and restart it if it is not."
-$taskMinutes = 5
+$autoRestartTask = $false
+$autoRestarttaskName = "Twingate Client Restart"
+$autoRestarttaskDescription = "This task will check every 5 minutes to see if the Twingate client is running, and restart it if it is not."
+$autoRestarttaskMinutes = 5
 
 # If you want to run a scheduled task to check if the user is logged out of the Twingate client, set to true.  
 # This will download a secondary script `user_not_logged_in_notification.ps1` and schedule it to run based on the configuration below. 
@@ -236,32 +236,32 @@ objShell.Run "powershell.exe -ExecutionPolicy Bypass -File ""$twingateClientPath
 
 
 # If the createScheduledTask variable is set to true, then create the scheduled task
-if ($createScheduledTask) {
-    if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) {
+if ($autoRestartTask) {
+    if (Get-ScheduledTask -TaskName $autoRestarttaskName -ErrorAction SilentlyContinue) {
         Write-Host [+] Scheduled Task already exists, removing and recreating
-        Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
+        Unregister-ScheduledTask -TaskName $autoRestarttaskName -Confirm:$false
     }
     Write-Host [+] Scheduled Task flag set, creating scheduled task
     Write-Host [+] Creating scheduled task
     $action = New-ScheduledTaskAction -Execute "$twingateClientPath\Twingate.exe"
     $taskTrigger = @(
-        $(New-ScheduledTaskTrigger -Once -At 12:01AM -RepetitionInterval (New-TimeSpan -Minutes $taskMinutes)),
+        $(New-ScheduledTaskTrigger -Once -At 12:01AM -RepetitionInterval (New-TimeSpan -Minutes $autoRestarttaskMinutes)),
         $(New-ScheduledTaskTrigger -Daily -At 12:01AM),
         $(New-ScheduledTaskTrigger -AtStartup)
     )
     $taskSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
     $taskPrincipal = New-ScheduledTaskPrincipal -GroupId "BUILTIN\Users"
-    Register-ScheduledTask -TaskName $taskName -Description $taskDescription -Action $action -Trigger $taskTrigger -Settings $taskSettings -Principal $taskPrincipal
+    Register-ScheduledTask -TaskName $autoRestarttaskName -Description $autoRestarttaskDescription -Action $action -Trigger $taskTrigger -Settings $taskSettings -Principal $taskPrincipal
     Write-Host [+] Finished creating scheduled task
 
     # Since a scheduled task has been created, start it and the Twingate service
     Write-Host [+] Starting Task, starting Twingate Client
-    Start-ScheduledTask -TaskName $taskName
+    Start-ScheduledTask -TaskName $autoRestarttaskName
     Start-Service -Name $twingateServiceName -ErrorAction SilentlyContinue
 } else {
-    if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) {
+    if (Get-ScheduledTask -TaskName $autoRestarttaskName -ErrorAction SilentlyContinue) {
         Write-Host [+] Scheduled Task already exists, removing and recreating
-        Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
+        Unregister-ScheduledTask -TaskName $autoRestarttaskName -Confirm:$false
     }	
     Write-Host [+] Scheduled Task flag not set, skipping scheduled task creation
     
@@ -269,15 +269,15 @@ if ($createScheduledTask) {
     Write-Host [+] Starting Twingate Client
 	Start-Service -Name $twingateServiceName -ErrorAction SilentlyContinue
 
-    # Create a scheduled task just to start the app in the user space
+    # Create a scheduled task just to start the app in the user space, this is a one-time action
 	$action = New-ScheduledTaskAction -Execute "$twingateClientPath\Twingate.exe"
     $taskTrigger = @(
-        $(New-ScheduledTaskTrigger -Once -At 12:01AM -RepetitionInterval (New-TimeSpan -Minutes $taskMinutes))
+        $(New-ScheduledTaskTrigger -Once -At 12:01AM)
     )
     $taskSettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
     $taskPrincipal = New-ScheduledTaskPrincipal -GroupId "BUILTIN\Users"
-    Register-ScheduledTask -TaskName $taskName -Description $taskDescription -Action $action -Trigger $taskTrigger -Settings $taskSettings -Principal $taskPrincipal
-	Start-ScheduledTask -TaskName $taskName
+    Register-ScheduledTask -TaskName "Twingate Client Start" -Description "Used by the Twingate client install script to start the service as a one-time action" -Action $action -Trigger $taskTrigger -Settings $taskSettings -Principal $taskPrincipal
+	Start-ScheduledTask -TaskName "Twingate Client Start"
 }
 
 # If the checkUserLoggedIn variable is set to true, then create the scheduled task to check if the user is logged in
