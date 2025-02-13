@@ -31,9 +31,27 @@ if ((Get-Process -Name "Twingate" -ErrorAction SilentlyContinue) -And (Get-Servi
 Write-Host [+] Uninstalling Twingate
 $twingateApp = Get-WmiObject -Class Win32_Product | Where-Object{$_.Name.Contains("Twingate")}
 if ($twingateApp) {
+    Write-Host [+] $twingateApp found uninstalling now
     $twingateApp.Uninstall()
 } else {
     Write-Host [+] Twingate is not installed
+}
+
+# Check for and remove any of the scheduled tasks
+Write-Host [+] Checking for scheduled tasks
+if (Get-ScheduledTask -TaskName "Twingate Client Auto Update" -ErrorAction SilentlyContinue) {
+    Write-Host [+] Auto update task exists, removing it
+    Unregister-ScheduledTask -TaskName "Twingate Client Auto Update" -Confirm:$false
+}
+
+if (Get-ScheduledTask -TaskName "Twingate Client Restart" -ErrorAction SilentlyContinue) {
+    Write-Host [+] Scheduled Task exists, removing it
+    Unregister-ScheduledTask -TaskName "Twingate Client Restart" -Confirm:$false
+}
+
+if (Get-ScheduledTask -TaskName "Twingate User Logged Out Notification" -ErrorAction SilentlyContinue) {
+    Write-Host [+] User Logged In scheduled task exists, removing it
+    Unregister-ScheduledTask -TaskName "Twingate User Logged Out Notification" -Confirm:$false
 }
 
 # Check if the Twingate ProgramData folder exists
@@ -43,7 +61,6 @@ if (Test-Path $twingateProgramData) {
 } else {
     Write-Host [+] Twingate ProgramData folder does not exist
 }
-
 
 # Finished running the script
 Write-Host [+] Finished running Twingate Client uninstaller script

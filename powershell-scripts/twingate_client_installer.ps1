@@ -174,7 +174,7 @@ $AgentURI = 'https://api.twingate.com/download/windows?installer=msi'
 $AgentDest = 'C:\Windows\Temp\TwingateInstaller.msi'
 Invoke-WebRequest $AgentURI -OutFile $AgentDest -UseBasicParsing
 Write-Host [+] Installing the Twingate Client
-cmd /c "msiexec.exe /i C:\Windows\Temp\TwingateInstaller.msi /qn network=$twingateNetworkName.twingate.com no_optional_updates=true"
+cmd /c "msiexec.exe /i C:\Windows\Temp\TwingateInstaller.msi /qn network=$twingateNetworkName.twingate.com no_optional_updates=true auto_update=true"
 Write-Host [+] Finished installing Twingate Client
 
 # If the createMachineKey variable is set to true, then create the machinekey.conf file
