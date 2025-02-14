@@ -1,5 +1,13 @@
 #!/bin/bash
 
+# Purpose of this script is to first install the Twingate client, and then to configure custom DNS settings.
+# There are cases where due to unique internal DNS structures it is necessary to set static DNS resolvers
+# and a search domain. This script will configure the DNS settings for systemd-resolved or NetworkManager
+# based on the active network manager in use.
+
+# If you don't need these custom settings then just install the Twingate client app normally.
+
+
 # Set local variables
 dns_servers="1.2.3.4 5.6.7.8" #set your DNS servers here, space separated
 dns_search_domain="company.internal" #set your search domains/suffixes here
@@ -54,7 +62,9 @@ configure_dns() {
     esac
 }
 
-configure_dns
 
 # Install the Twingate client now
 curl -s https://binaries.twingate.com/client/linux/install.sh | sudo bash
+
+# Configure the DNS settings
+configure_dns
