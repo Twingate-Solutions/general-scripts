@@ -78,6 +78,12 @@ $autoUpdateTaskDescription = "This task will check every $updateDays days to see
 $addDNSSearchDomain = $false
 $dnsSearchDomain = "test.domain.com"
 
+
+# If you are using the Twingate DNS Filtering service and would like to avoid issues with the block page failing in some situations
+# you can install the NextDNS root certificate.  This is optional, and only necessary if you are using the Twingate DNS Filtering service
+# and are experiencing issues with the block page not loading properly.
+$installRootCert = $false
+
 ###################################
 ##         Set Variables         ##
 ###################################
@@ -349,6 +355,13 @@ if ($addDNSSearchDomain) {
     } else {
         Write-Host [+] Twingate TAP adapter not found, skipping DNS search domain addition
     }
+}
+
+# Install the NextDNS root cert if enabled
+if ($installRootCert) {
+    Invoke-WebRequest -Uri "https://nextdns.io/ca" -OutFile "$env:TEMP\nextdns.cer"
+    certutil -addstore -f root "$env:TEMP\nextdns.cer"
+    Remove-Item "$env:TEMP\nextdns.cer"
 }
 
 # Finished running the script

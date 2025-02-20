@@ -62,6 +62,10 @@ if (Test-Path $twingateProgramData) {
     Write-Host [+] Twingate ProgramData folder does not exist
 }
 
+# Remove the NextDNS Root Cert if it exists
+Write-Host [+] Removing the NextDNS Root Cert
+certutil –delstore Root d47605fc0736802cee4153dda032d276cf2c81c7
+
 # Finished running the script
 Write-Host [+] Finished running Twingate Client uninstaller script
 
