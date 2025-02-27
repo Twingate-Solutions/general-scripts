@@ -82,6 +82,10 @@ $dnsSearchDomain = "test.domain.com"
 # If you are using the Twingate DNS Filtering service and would like to avoid issues with the block page failing in some situations
 # you can install the NextDNS root certificate.  This is optional, and only necessary if you are using the Twingate DNS Filtering service
 # and are experiencing issues with the block page not loading properly.
+
+# Note: The NextDNS root certificate is not managed by Twingate, it is managed by NextDNS as a vendor of Twingate.
+# If you have concerns around the security of a third-party root certificate please see their 
+# documentation for more information: https://help.nextdns.io/t/g9hmv0a?r=m1htlfl
 $installRootCert = $false
 
 ###################################
