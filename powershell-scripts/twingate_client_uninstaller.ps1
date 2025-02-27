@@ -28,17 +28,11 @@ if ((Get-Process -Name "Twingate" -ErrorAction SilentlyContinue) -And (Get-Servi
     Write-Host [+] Twingate is not running
 }
 
+# Check to see if the TG client app is installed and if so remove it
 Write-Host [+] Uninstalling Twingate
 Write-Host [+] Uninstall flag set, uninstalling Twingate Client application
 $twingateApp = Get-WmiObject -Class Win32_Product -Filter 'Name LIKE "%Twingate%"'
 if ($twingateApp) {
-    $twingateApp.Uninstall()
-}
-
-
-$twingateApp = Get-WmiObject -Class Win32_Product | Where-Object{$_.Name.Contains("Twingate")}
-if ($twingateApp) {
-    Write-Host [+] $twingateApp found uninstalling now
     $twingateApp.Uninstall()
 } else {
     Write-Host [+] Twingate is not installed
