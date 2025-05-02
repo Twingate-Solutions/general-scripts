@@ -46,7 +46,7 @@ Write-Output "RSS Changelog Version: $changeLogVersion"
 Write-Output "Registry Version: $registryVersion"
 
 # Step 3: Compare the two versions and alert if the client is out of date
-if ($changeLogVersion -match $registryVersion) {
+if ($changeLogVersion -eq $registryVersion) {
     # Do nothing in this case, the versions match meaning the installed client is up to date
     Write-Output "Client is up to date"
     exit 0
@@ -57,4 +57,3 @@ if ($changeLogVersion -match $registryVersion) {
     Write-Output "Client is out of date"
     exit 1
 } 
-
