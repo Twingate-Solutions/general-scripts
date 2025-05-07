@@ -8,6 +8,9 @@
 # It is meant to be run via Powershell 5.x on Windows 10 or 11, and parts may not function on other versions of Windows
 # or Powershell.  It is recommended to test this script in a lab environment before deploying to production.
 
+# Start transcription
+Start-Transcript -path c:\client-install.log -append
+
 # Disable the WebRequest progress bar, speeds up downloads
 $ProgressPreference = "SilentlyContinue"
 
@@ -33,10 +36,9 @@ foreach ($item in $RSS.rss.channel.item) {
 # so it's best to run the uninstall first option on any remediation script.
 $appPath = Get-ChildItem -Path "registry::HKEY_CLASSES_ROOT\Installer\Products"
 foreach ($app in $appPath) {
-    #Write-Output $app.GetValue("ProductName")
     if ($app.GetValue("ProductName") -match "Twingate") {
         $registryVersion = $app.GetValue("ProductName")
-        $registryVersion = $registryVersion -replace ".*(\d{4}.\d{2}).*",'$1'
+        $registryVersion = $registryVersion -replace ".*(\d{4}\.\d{1,3})\..*",'$1'
         break 
     }
 }
@@ -46,15 +48,21 @@ Write-Output "RSS Changelog Version: $changeLogVersion"
 Write-Output "Registry Version: $registryVersion"
 
 # Step 3: Compare the two versions and alert if the client is out of date
-if ($changeLogVersion -match $registryVersion) {
+if ($null -eq $changeLogVersion) {
+    # If we can't find the changelog version then we can't do anything - in testing the WebRequest sometimes timed out
+    Write-Output "Unable to find changelog version - Error with WebRequest"
+    Stop-Transcript | Out-Null
+    exit 0
+} elseif ($changeLogVersion -eq $registryVersion) {
     # Do nothing in this case, the versions match meaning the installed client is up to date
     Write-Output "Client is up to date"
+    Stop-Transcript | Out-Null
     exit 0
 } else {
     # If you're doing Intune remediation then this is where you'd exit code 1
     # and Intune would run the remediation script, if not then you can trigger
     # whatever code you want here
-    Write-Output "Client is out of date"
+    Write-Output "Client is out of date or missing, please run the remediation script"
+    Stop-Transcript | Out-Null
     exit 1
 } 
-
