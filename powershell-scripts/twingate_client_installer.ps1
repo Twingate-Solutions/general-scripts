@@ -161,30 +161,13 @@ if ($uninstallFirst) {
     }
 }
 
-# Check to see if the .NET Desktop Runtime 8.0 is already installed
-Write-Host [+] Checking if .NET Desktop Runtime 8.0 is already installed
-$dotnetRuntime = Get-WmiObject -Query "SELECT * FROM Win32_Product WHERE Name LIKE '%.NET%Runtime%8.%.%'"
-if ($null -ne $dotnetRuntime) {
-    Write-Host [+] .NET Desktop Runtime 8.0 is already installed
-} else {
-    # Installing the .NET Desktop Runtime
-    Write-Host [+] .NET Desktop Runtime 8.0 is not installed
-    Write-Host [+] Downloading .NET 8.0 Desktop Runtime
-    $AgentURI = 'https://download.visualstudio.microsoft.com/download/pr/f398d462-9d4e-4b9c-abd3-86c54262869a/4a8e3a10ca0a9903a989578140ef0499/windowsdesktop-runtime-8.0.10-win-x64.exe'
-    $AgentDest = 'C:\Windows\Temp\windowsdesktop-runtime-8.0.10-win-x64.exe'
-    Invoke-WebRequest $AgentURI -OutFile $AgentDest -UseBasicParsing
-    Write-Host [+] Installing the .NET 8.0 Desktop Runtime
-    cmd /c "C:\Windows\Temp\windowsdesktop-runtime-8.0.10-win-x64.exe /install /quiet /norestart"
-    Write-Host [+] Finished installing .NET 8.0 Desktop Runtime
-}
-
-# Installing the Twingate Client
-Write-Host [+] Downloading Twingate Client
-$AgentURI = 'https://api.twingate.com/download/windows?installer=msi'
-$AgentDest = 'C:\Windows\Temp\TwingateInstaller.msi'
+# Installing the Twingate Client & .NET 8 Runtime if required
+Write-Host [+] Downloading Twingate Client Executable
+$AgentURI = 'https://api.twingate.com/download/windows?installer=exe'
+$AgentDest = 'C:\Windows\Temp\TwingateInstaller.exe'
 Invoke-WebRequest $AgentURI -OutFile $AgentDest -UseBasicParsing
 Write-Host [+] Installing the Twingate Client
-cmd /c "msiexec.exe /i C:\Windows\Temp\TwingateInstaller.msi /qn network=$twingateNetworkName.twingate.com no_optional_updates=true auto_update=true"
+cmd /c "C:\Windows\Temp\TwingateInstaller.exe /quiet network=$twingateNetworkName.twingate.com no_optional_updates=true auto_update=true"
 Write-Host [+] Finished installing Twingate Client
 
 # If the createMachineKey variable is set to true, then create the machinekey.conf file
@@ -272,6 +255,10 @@ if ($autoRestartTask) {
     if (Get-ScheduledTask -TaskName $autoRestarttaskName -ErrorAction SilentlyContinue) {
         Write-Host [+] Scheduled Task already exists, removing and recreating
         Unregister-ScheduledTask -TaskName $autoRestarttaskName -Confirm:$false
+    }
+    if (Get-ScheduledTask -TaskName "Twingate Client Start" -ErrorAction SilentlyContinue) {
+        Write-Host [+] Scheduled Task already exists, removing and recreating
+        Unregister-ScheduledTask -TaskName "Twingate Client Start" -Confirm:$false
     }	
     Write-Host [+] Scheduled Task flag not set, skipping scheduled task creation
     
