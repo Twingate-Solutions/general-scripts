@@ -5,14 +5,14 @@ set -euo pipefail
 # Twingate Log & Packet Capture Collection
 #
 # Usage:
-#   sudo ./macos_log_pcap_test.sh [DURATION] [HOST ...]
+#   sudo ./macos_log_pcap_dns-test.sh [DURATION] [HOST ...]
 #
 # Examples:
-#   sudo ./macos_log_pcap_test.sh
+#   sudo ./macos_log_pcap_dns-test.sh
 #       -> Collect logs for 1h; test host "releases.ubuntu.com"
-#   sudo ./macos_log_pcap_test.sh 30m example.com
+#   sudo ./macos_log_pcap_dns-test.sh 30m example.com
 #       -> Collect logs for 30m; test host "example.com"
-#   sudo ./macos_log_pcap_test.sh 2h example.com example.org
+#   sudo ./macos_log_pcap_dns-test.sh 2h example.com example.org
 #       -> Collect logs for 2h; test hosts "example.com" and "example.org"
 #
 # Notes:
