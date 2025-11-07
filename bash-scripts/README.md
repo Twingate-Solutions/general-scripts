@@ -8,3 +8,4 @@ The scripts in this folder are meant to be used as the basis of scripts that can
 - **`client_linux_firewall_check.sh`**: Bash script to check the state of the firewall and report it back to the user.
 - **`client_macos_sys-info.sh`**: Bash script to be run on a MacOS system, to gather various system information and put into a file for sending to Twingate support for troubleshooting.
 - **`ubuntu-client-installer.sh`**: Bash script to install the Twingate client on an Ubuntu system, and also to configure special DNS settings.
+- **`keep-one-behind.sh`**: Bash script that allows you to update a package on Ubuntu/Debian systems but keeping one version back from latest.  This would be useful in a situation (such as updating the Twingate Connector) where you want to stay on a more stable/older version rather than the bleeding edge.
