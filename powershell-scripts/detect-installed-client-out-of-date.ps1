@@ -8,6 +8,10 @@
 # It is meant to be run via Powershell 5.x on Windows 10 or 11, and parts may not function on other versions of Windows
 # or Powershell.  It is recommended to test this script in a lab environment before deploying to production.
 
+# Variables
+$versionsToStayBehind = 0  # Set to a number greater than 0 if you want to allow staying behind by a certain number of versions
+$versionsCounter = 0      # Internal counter for versions behind - do not modify
+
 # Start transcription
 Start-Transcript -path c:\client-install.log -append
 
@@ -22,6 +26,12 @@ $changeLogContent = Invoke-WebRequest -Uri $twingateClientChangelogRSS -UseBasic
 # Loop through the RSS feed items to find the latest Windows client version which should be the first match
 foreach ($item in $RSS.rss.channel.item) {
     if ($item.link -match "windows") {
+        if ($versionsToStayBehind -gt 0) { # Only apply if we're allowing versions behind
+            if ($versionsCounter -lt $versionsToStayBehind) {
+                $versionsCounter++
+                continue
+            }
+        }
         $changeLogVersion = $item.link -replace ".*#windows-(\d+-\d+)-release.*",'$1'
         $changeLogVersion = $changeLogVersion -replace "-","."
         break

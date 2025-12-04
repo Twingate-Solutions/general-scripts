@@ -72,11 +72,15 @@ $updateDays = 30
 $autoUpdateTaskName = "Twingate Client Auto Update"
 $autoUpdateTaskDescription = "This task will check every $updateDays days to see if the Twingate client needs to be updated, and update it if necessary."
 
-
 # If you need to add a DNS search domain to the Twingate TAP adapter, enable the option below and add it to the variable.
 # This is useful if you have internal DNS domains that need to be resolved by the Twingate client.
 $addDNSSearchDomain = $false
 $dnsSearchDomain = "test.domain.com"
+
+# If you don't want to update or install the latest and greatest Twingate client, you can specify how many versions behind
+# you would like to install.  By deafult it is set to 0 meaning 0 versions behind, ie the latest version.
+$versionsToStayBehind = 0  # Set to a number greater than 0 if you want to allow staying behind by a certain number of versions
+$versionsCounter = 0 # Internal counter for versions behind - do not modify
 
 
 # If you are using the Twingate DNS Filtering service and would like to avoid issues with the block page failing in some situations
@@ -137,12 +141,84 @@ function Set-TwingateNotifyIconPromoted {
     return $results
 }
 
+# Function to get the Twingate client download URL from the changelog URL
+function Get-TwingateClientDownloadUrl {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$ChangelogUrl  # e.g. https://www.twingate.com/changelog/clients#windows-2025-330-release
+    )
+
+    # Parse URL and fragment
+    $uri      = [System.Uri]$ChangelogUrl
+    $baseUrl  = $uri.GetLeftPart([System.UriPartial]::Path)  # https://www.twingate.com/changelog/clients
+    $fragment = $uri.Fragment.TrimStart('#')                 # windows-2025-330-release
+
+    # Expected format: {os}-{year}-{build}-release
+    # e.g. windows-2025-330-release
+    $parts = $fragment -split '-'
+    if ($parts.Count -lt 4) {
+        throw "Unexpected fragment format: '$fragment'"
+    }
+
+    $os    = $parts[0]         # windows / macos / linux etc.
+    $year  = $parts[1]         # 2025
+    $build = $parts[2]         # 330
+
+    $versionPrefix = "$year.$build"  # 2025.330
+
+    # Fetch the clients changelog page
+    $response = Invoke-WebRequest -Uri $baseUrl -UseBasicParsing
+
+    if (-not $response.Links) {
+        throw "No <a> links found on $baseUrl"
+    }
+
+    # Find the first binaries.twingate.com link matching this OS + version prefix
+    # Example href:
+    #   https://binaries.twingate.com/client/windows/versions/2025.330.1627/TwingateWindowsInstaller.msi
+    $link = $response.Links |
+        Where-Object {
+            $_.href -like "https://binaries.twingate.com/client/$os/versions/$versionPrefix.*"
+        } |
+        Select-Object -First 1
+
+    if (-not $link) {
+        throw "No matching download link found for OS '$os' and version prefix '$versionPrefix' on $baseUrl"
+    }
+
+    return $link.href
+}
+
 ###################################
 ##         Main Script           ##
 ###################################
 
 # Start transcription
 Start-Transcript -path c:\client-install.log -append
+
+# Need to determine which version of the Twingate client to install
+$twingateClientChangelogRSS = "https://www.twingate.com/changelog-clients.rss.xml"
+$changeLogContent = Invoke-WebRequest -Uri $twingateClientChangelogRSS -UseBasicParsing
+[xml]$RSS = $changeLogContent.Content
+
+# Loop through the RSS feed items to find the latest Windows client version which should be the first match
+foreach ($item in $RSS.rss.channel.item) {
+    if ($item.link -match "windows") {
+        if ($versionsToStayBehind -gt 0) { # Only apply if we're allowing versions behind
+            if ($versionsCounter -lt $versionsToStayBehind) {
+                $versionsCounter++
+                continue
+            }
+        }
+        $changelogUrl = $item.link 
+        break
+    }
+}
+
+$AgentURI  = Get-TwingateClientDownloadUrl -ChangelogUrl $changelogUrl
+$AgentURI = $AgentURI -replace ".msi",'.exe'
+Write-Host [+] Determined Twingate client download URL: $AgentURI
 
 # Check to see if Twingate is already running, if so kill it
 Write-Host [+] Checking for existing Twingate install
@@ -163,7 +239,6 @@ if ($uninstallFirst) {
 
 # Installing the Twingate Client & .NET 8 Runtime if required
 Write-Host [+] Downloading Twingate Client Executable
-$AgentURI = 'https://api.twingate.com/download/windows?installer=exe'
 $AgentDest = 'C:\Windows\Temp\TwingateInstaller.exe'
 Invoke-WebRequest $AgentURI -OutFile $AgentDest -UseBasicParsing
 Write-Host [+] Installing the Twingate Client
