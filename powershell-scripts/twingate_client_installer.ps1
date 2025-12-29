@@ -74,6 +74,9 @@ $autoUpdateTaskDescription = "This task will check every $updateDays days to see
 
 # If you need to add a DNS search domain to the Twingate TAP adapter, enable the option below and add it to the variable.
 # This is useful if you have internal DNS domains that need to be resolved by the Twingate client.
+#
+# Note: If you would like multiple domains to be added, just separate them with either a space or a comma.
+# Example: "domain1.com, domain2.internal" or "domain1.com domain2.internal"
 $addDNSSearchDomain = $false
 $dnsSearchDomain = "test.domain.com"
 
