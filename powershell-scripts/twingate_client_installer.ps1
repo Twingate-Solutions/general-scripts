@@ -91,9 +91,14 @@ $versionsCounter = 0 # Internal counter for versions behind - do not modify
 # and are experiencing issues with the block page not loading properly.
 
 # Note: The NextDNS root certificate is not managed by Twingate, it is managed by NextDNS as a vendor of Twingate.
-# If you have concerns around the security of a third-party root certificate please see their 
+# If you have concerns around the security of a third-party root certificate please see their
 # documentation for more information: https://help.nextdns.io/t/g9hmv0a?r=m1htlfl
 $installRootCert = $false
+
+# Setting log_level=debug enables the "Collect Detailed Logs" option in the Twingate client.  This is useful for admins
+# who want detailed diagnostic logging turned on by default for all new installations without needing to ask users to
+# enable it manually after install.
+$enableDebugLogging = $false
 
 ###################################
 ##         Set Variables         ##
@@ -245,7 +250,11 @@ Write-Host [+] Downloading Twingate Client Executable
 $AgentDest = 'C:\Windows\Temp\TwingateInstaller.exe'
 Invoke-WebRequest $AgentURI -OutFile $AgentDest -UseBasicParsing
 Write-Host [+] Installing the Twingate Client
-cmd /c "C:\Windows\Temp\TwingateInstaller.exe /quiet network=$twingateNetworkName.twingate.com no_optional_updates=true auto_update=true"
+if ($enableDebugLogging) {
+    cmd /c "C:\Windows\Temp\TwingateInstaller.exe /quiet network=$twingateNetworkName.twingate.com no_optional_updates=true auto_update=true log_level=debug"
+} else {
+    cmd /c "C:\Windows\Temp\TwingateInstaller.exe /quiet network=$twingateNetworkName.twingate.com no_optional_updates=true auto_update=true"
+}
 Write-Host [+] Finished installing Twingate Client
 
 # If the createMachineKey variable is set to true, then create the machinekey.conf file
