@@ -20,6 +20,11 @@
       8. Promotes the tray notification icon
       9. Removes its own login-triggered scheduled task (and helper task)
 
+    When -WaitForConnectivity is set, step 0 is an internet-connectivity probe:
+    if the internet is not reachable the script exits immediately without making
+    any changes or removing its login task, so a repeating task can retry until
+    connectivity (and the rest of the promotion) succeeds.
+
     Intended to run ELEVATED, triggered by a per-machine scheduled task on user
     logon. Because it runs elevated it cannot itself launch the tray app in the
     user's session, so it uses a transient BUILTIN\Users scheduled task to do so.
@@ -39,17 +44,38 @@ param(
     [ValidateNotNullOrEmpty()]
     [string]$TwingateNetworkName,
 
+    # --- Optional overrides ------------------------------------------------
+    # The parameters below are OPTIONAL overrides. Their defaults live in the
+    # "Editable defaults" block in the Configuration section, so they can be
+    # baked into the staged script; anything passed on the CLI wins over that.
+
     # Name of the scheduled task that triggers THIS script on user logon.
     # This task is removed at the end of a successful run.
     [Parameter()]
-    [string]$LoginTaskName = "Twingate Promote To User Mode",
+    [string]$LoginTaskName,
 
     # If set, the reinstall is skipped when the user-mode UI (Twingate.exe) is
     # already present. The script still launches the app, promotes the icon, and
     # cleans up. Lets the login task fire harmlessly on every subsequent logon
     # until it removes itself.
     [Parameter()]
-    [switch]$SkipIfAlreadyUserMode
+    [switch]$SkipIfAlreadyUserMode,
+
+    # If set, the script verifies internet connectivity BEFORE doing anything. If
+    # the check fails it logs and exits without promoting or removing its login
+    # task, so a repeating task can retry later. Set by Install-TwingateHeadless.ps1
+    # when -RetryUntilOnline is used.
+    [Parameter()]
+    [switch]$WaitForConnectivity,
+
+    # URL probed for the connectivity check (expects HTTP 200).
+    [Parameter()]
+    [string]$ConnectivityTestUrl,
+
+    # Substring the probe response body must contain to count as REAL internet
+    # (defeats captive portals). '' = check the HTTP 200 status only.
+    [Parameter()]
+    [string]$ConnectivityExpectedText
 )
 
 ###################################
@@ -58,6 +84,18 @@ param(
 
 $ErrorActionPreference = "Stop"
 $ProgressPreference     = "SilentlyContinue"  # speeds up Invoke-WebRequest downloads
+
+# ---------------------------------------------------------------------------
+# Editable defaults
+# ---------------------------------------------------------------------------
+# Edit these to bake behaviour into the staged script. Anything supplied on the
+# command line OVERRIDES the matching default below. (Install-TwingateHeadless.ps1
+# passes the connectivity options explicitly when it registers this task.)
+if (-not $PSBoundParameters.ContainsKey('LoginTaskName'))            { $LoginTaskName            = "Twingate Promote To User Mode" }
+if (-not $PSBoundParameters.ContainsKey('SkipIfAlreadyUserMode'))    { $SkipIfAlreadyUserMode    = $false }
+if (-not $PSBoundParameters.ContainsKey('WaitForConnectivity'))      { $WaitForConnectivity      = $false }
+if (-not $PSBoundParameters.ContainsKey('ConnectivityTestUrl'))      { $ConnectivityTestUrl      = "http://www.msftconnecttest.com/connecttest.txt" }
+if (-not $PSBoundParameters.ContainsKey('ConnectivityExpectedText')) { $ConnectivityExpectedText = "Microsoft Connect Test" }                            # "" = check HTTP 200 only
 
 $twingateInstallDir   = "C:\Program Files\Twingate"
 $twingateClientExe    = Join-Path $twingateInstallDir "Twingate.exe"
@@ -78,6 +116,30 @@ $changelogRssUrl      = "https://www.twingate.com/changelog-clients.rss.xml"
 ###################################
 ##          Functions           ##
 ###################################
+
+# Probe for real internet connectivity. Returns $true only on HTTP 200 AND (when
+# an expected substring is given) a matching body, so a captive portal that
+# answers 200 with its own page is not mistaken for working internet.
+function Test-InternetConnectivity {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [string]$Url,
+        [string]$ExpectedText,
+        [int]$TimeoutSec = 10
+    )
+
+    try {
+        $resp = Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec $TimeoutSec
+        if ($resp.StatusCode -ne 200) { return $false }
+        if ($ExpectedText -and ($resp.Content -notlike "*$ExpectedText*")) {
+            return $false   # 200 but wrong body => likely a captive portal
+        }
+        return $true
+    }
+    catch {
+        return $false
+    }
+}
 
 # Resolve the latest Windows client EXE URL from the changelog RSS as a fallback
 # when the api.twingate.com redirect is unavailable or serves the wrong artifact.
@@ -227,6 +289,20 @@ try {
     Write-Host "[+] Twingate headless -> user mode promotion starting"
     Write-Host "[+] Target network: $TwingateNetworkName.twingate.com"
 
+    # ---- Connectivity gate -------------------------------------------------
+    # When asked to wait for connectivity, bail out cleanly (no changes, no
+    # self-removal) if the internet isn't reachable yet, so a repeating login
+    # task retries on its next firing. 'return' lets the finally block stop the
+    # transcript and the script exits 0.
+    if ($WaitForConnectivity) {
+        Write-Host "[+] Verifying internet connectivity via $ConnectivityTestUrl"
+        if (-not (Test-InternetConnectivity -Url $ConnectivityTestUrl -ExpectedText $ConnectivityExpectedText)) {
+            Write-Warning "[!] No internet connectivity yet; skipping promotion this run. Login task left in place to retry."
+            return
+        }
+        Write-Host "[+] Connectivity confirmed"
+    }
+
     # ---- Idempotency guard -------------------------------------------------
     # Headless installs do not deploy Twingate.exe, so its presence is a
     # reasonable signal that the box is already in user mode.
@@ -248,7 +324,13 @@ try {
             Stop-Service -Name $twingateServiceName -Force -ErrorAction SilentlyContinue
         }
         Stop-Process -Name "Twingate" -Force -ErrorAction SilentlyContinue
-
+		Write-Host "[+] Uninstalling existing Twingate application"
+		$twingateApp = Get-WmiObject -Class Win32_Product -Filter 'Name LIKE "%Twingate%"'
+		if ($twingateApp) {
+			$twingateApp.Uninstall()
+		} else {
+			Write-Host [+] Twingate is not installed
+		}
         # ---- Reinstall in user mode ---------------------------------------
         # No service_secret => full client + UI. network= pre-configures it.
         # We deliberately do NOT inspect the installer's exit code: just wait
