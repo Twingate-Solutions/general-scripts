@@ -1,5 +1,10 @@
 # Twingate Headless → User Mode Promotion
 
+> ⚠️ **Experimental / lightly tested.** These scripts are a **template** for admins to
+> adapt into their own provisioning scripts and processes — not a turnkey, fully
+> supported product. Read them, test them on throwaway machines, and adjust to your
+> environment before any fleet rollout. Treat them as a starting point.
+
 Ship pre-provisioned Windows machines that already have Twingate connectivity
 (headless / service mode), then automatically promote each one to the full
 interactive tray client the first time its end user logs in.
@@ -48,9 +53,9 @@ internet and retry until it works:
 Run once per machine during provisioning. In order, it:
 
 1. Validates the service key is well-formed JSON.
-2. **Force-uninstalls any existing Twingate** (safety check).
+2. **Force-uninstalls any existing Twingate** (safety check, via the uninstall registry).
 3. Downloads the latest Windows EXE installer.
-4. Installs **headless** (`service_secret=<key>`) — connectivity, no UI, no user needed.
+4. Installs **headless** (`service_secret=<file>`) — connectivity, no UI, no user needed.
 5. Forces the service to **Automatic** and starts it (so it survives reboots).
 6. **Stages `Promote-TwingateToUserMode.ps1`** into an admin-only directory (locked to
    SYSTEM + Administrators) and **registers the first-logon task** that runs it.
@@ -97,8 +102,9 @@ it on first logon. In order, it:
 1. *(Optional, with `-WaitForConnectivity`)* probes the internet; if it's not reachable,
    exits without changes and **leaves the task** so it retries.
 2. Downloads the latest Windows EXE.
-3. Stops the headless service/process.
-4. Reinstalls in **user mode** (`network=<network>.twingate.com`, no `service_secret`).
+3. Stops the headless service/process and **uninstalls the existing Twingate app**.
+4. Reinstalls in **user mode** (`network=<network>.twingate.com`, no `service_secret`,
+   with `auto_update=true no_optional_updates=true`).
 5. Forces the service to **Automatic** and starts it — **this is the success signal**: if
    the reinstall failed the service won't start, the run is treated as failed, and the
    task is left in place to retry on the next logon.
@@ -157,41 +163,6 @@ These also support the same "Editable defaults" block / CLI-override pattern.
 
 ---
 
-## Why this exists
-
-Headless installs (`service_secret=`) give a machine Twingate access **without a UI** and
-without a logged-in user — ideal during imaging, provisioning, and Autopilot, where the
-device must reach internal resources before anyone signs in.
-
-But headless mode never installs the tray client, and the only supported way to move
-headless → user mode is a **full reinstall from the EXE**. `Promote-TwingateToUserMode.ps1`
-automates that reinstall and launches the tray app in the user's session, so the
-transition happens silently on first logon with no manual touch — and
-`Install-TwingateHeadless.ps1` sets the whole thing up in one provisioning step.
-
-## The lifecycle
-
-```text
-[ Provisioning / Autopilot runs Install-TwingateHeadless.ps1 (elevated) ]
-        │  Force-uninstall any existing Twingate
-        │  Headless install (service_secret) → connectivity, no UI
-        │  Service forced to Automatic + started
-        │  Promote script staged to admin-only dir (locked down)
-        │  Login-triggered task registered (runs promote as SYSTEM)
-        ▼
-[ Device has Twingate connectivity immediately — before any user logs in ]
-        │
-        ▼
-[ User receives machine, powers on, logs in for the first time ]
-        │  Login task fires (after delay; optionally retries until online)
-        ▼
-[ Promote: download EXE → stop service → reinstall in user mode →
-  force service Automatic → launch tray app in user session →
-  promote tray icon → remove its own login task ]
-        ▼
-[ User has the full Twingate tray client; service auto-starts going forward ]
-```
-
 ## Requirements
 
 - Windows 10 / 11, Windows PowerShell 5.1; run elevated (the installer is intended to run
@@ -199,17 +170,18 @@ transition happens silently on first logon with no manual touch — and
 - A Twingate **Service Account + Service Key** for the headless install (Enterprise plan).
 - Outbound HTTPS to `api.twingate.com`, `binaries.twingate.com`, and `www.twingate.com`
   (installer download + changelog fallback).
-- Both scripts shipped together; the promote script ends up staged where standard users
-  can't read or alter it (the installer locks `C:\ProgramData\TwingateDeploy\` to
-  SYSTEM + Administrators). It holds **no secrets**.
+- Both scripts shipped together; the installer locks the deploy dir
+  (`C:\ProgramData\TwingateDeploy\`) to SYSTEM + Administrators. The staged promote script
+  holds **no secrets**.
 
-## Assumptions
+### Things to know
 
-- The device ships with Twingate in **headless mode**; `Twingate.exe` (the UI) is absent
-  until the promote script reinstalls — its presence is used as the "already user mode" signal.
-- Exactly one interactive user logs in (standard single-user device model). The tray app
+- The device must ship with Twingate in **headless mode**; `Twingate.exe` (the UI) is
+  absent until the promote script reinstalls — its presence is used as the "already user
+  mode" signal.
+- Assumes **one interactive user** per device (standard single-user model). The tray app
   launches into the active session via a `BUILTIN\Users` task.
 - The login task runs **elevated** (SYSTEM / highest privileges) — required to
-  uninstall/reinstall Twingate. It can't itself launch the tray app in the user session,
-  which is why the promote script hands that off to a transient user-context task.
-- "Always auto-start" is desired; both scripts force the service to **Automatic**.
+  uninstall/reinstall Twingate — and hands the in-session tray launch off to a transient
+  user-context task.
+- Both scripts force the service to **Automatic** so it always auto-starts.
