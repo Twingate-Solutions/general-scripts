@@ -84,7 +84,7 @@
 [CmdletBinding(SupportsShouldProcess)]  # -WhatIf/-Confirm support; action handlers must call $PSCmdlet.ShouldProcess() for destructive ops
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('Deploy', 'Remove', 'UpdateConnector', 'UpdateOS', 'List')]
+    [ValidateSet('Deploy', 'Remove', 'UpdateConnector', 'UpdateOS', 'List', 'FixVM')]
     [string]$Action,
 
     [Parameter()]
@@ -116,7 +116,11 @@ param(
 
     [Parameter()]
     [ValidateNotNullOrEmpty()]
-    [string]$VSwitch
+    [string]$VSwitch,
+
+    [Parameter()]
+    [ValidateNotNullOrEmpty()]
+    [string]$VMName
 )
 
 Set-StrictMode -Version Latest
@@ -124,6 +128,9 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'  # Speeds up Invoke-WebRequest significantly
 
 #region Helper Functions
+
+# Tracks connector records orphaned by FixVM reprovision, surfaced at end of run.
+$script:OrphanedConnectors = [System.Collections.Generic.List[object]]::new()
 
 function Write-Status {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '')]
@@ -177,7 +184,7 @@ function Test-Prerequisites {
     # Admin check
     if (-not (Test-IsAdministrator)) {
         Write-Status 'This script must be run as Administrator.' -Type Error
-        exit 1
+        throw 'This script must be run as Administrator.'
     }
     Write-Status 'Running as Administrator.'
 
@@ -185,7 +192,7 @@ function Test-Prerequisites {
     $os = Get-CimInstance -ClassName Win32_OperatingSystem
     if ($os.ProductType -eq 1) {
         Write-Status 'This script targets Windows Server. Windows Desktop is not supported in v1.' -Type Error
-        exit 1
+        throw 'This script targets Windows Server. Windows Desktop is not supported in v1.'
     }
     Write-Status "OS: $($os.Caption)"
 
@@ -193,7 +200,7 @@ function Test-Prerequisites {
     $hvFeature = Get-WindowsFeature -Name Hyper-V -ErrorAction SilentlyContinue
     if ($null -eq $hvFeature) {
         Write-Status 'Cannot query Windows Features. Ensure this is running on Windows Server.' -Type Error
-        exit 1
+        throw 'Cannot query Windows Features. Ensure this is running on Windows Server.'
     }
     if (-not $hvFeature.Installed) {
         Write-Status 'Hyper-V is not installed.' -Type Warning
@@ -206,7 +213,7 @@ function Test-Prerequisites {
     $ssh = Get-Command ssh.exe -ErrorAction SilentlyContinue
     if (-not $ssh) {
         Write-Status 'ssh.exe not found. Enable OpenSSH Client in Windows Optional Features.' -Type Error
-        exit 1
+        throw 'ssh.exe not found. Enable OpenSSH Client in Windows Optional Features.'
     }
     Write-Status "ssh.exe found: $($ssh.Source)"
 
@@ -214,7 +221,7 @@ function Test-Prerequisites {
     $sshKeygen = Get-Command ssh-keygen.exe -ErrorAction SilentlyContinue
     if (-not $sshKeygen) {
         Write-Status 'ssh-keygen.exe not found. Enable OpenSSH Client in Windows Optional Features.' -Type Error
-        exit 1
+        throw 'ssh-keygen.exe not found. Enable OpenSSH Client in Windows Optional Features.'
     }
     Write-Status "ssh-keygen.exe found: $($sshKeygen.Source)"
 }
@@ -235,14 +242,14 @@ function Install-HyperV {
         else {
             Write-Status 'Enable VT-x (Intel) or AMD-V (AMD) in the system BIOS/UEFI settings.' -Type Info
         }
-        exit 1
+        throw 'Cannot install Hyper-V: CPU virtualization extensions are not available.'
     }
 
     Write-Status 'Hyper-V is not installed. Install now? This requires a reboot.' -Type Warning
     $confirm = Read-Host 'Install Hyper-V? (Y/N)'
     if ($confirm.Trim().ToUpper() -ne 'Y') {
         Write-Status 'Hyper-V is required. Exiting.' -Type Error
-        exit 1
+        throw 'Hyper-V is required. Exiting.'
     }
     Write-Status 'Installing Hyper-V...' -Type Action
     try {
@@ -253,13 +260,35 @@ function Install-HyperV {
         Write-Status 'Common causes:' -Type Info
         Write-Status '  - Nested virtualization not enabled (if this is a VM)' -Type Info
         Write-Status '  - VT-x/AMD-V not enabled in BIOS/UEFI (if physical hardware)' -Type Info
-        exit 1
+        throw "Hyper-V installation failed: $_"
     }
     Write-Status 'Hyper-V installed. A reboot is required before running this script again.'
     Write-Status 'Save all open work, then press Enter to reboot.'
     Read-Host 'Press Enter to reboot' | Out-Null
     Restart-Computer -Force
     exit 0
+}
+
+function Resolve-QemuImgAssetUrl {
+    [CmdletBinding()]
+    param()
+    $apiUrl = 'https://api.github.com/repos/fdcastel/qemu-img-windows-x64/releases/latest'
+    try {
+        # GitHub requires TLS 1.2 and a User-Agent header.
+        [Net.ServicePointManager]::SecurityProtocol = `
+            [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+        $release = Invoke-RestMethod -Uri $apiUrl -UseBasicParsing `
+            -Headers @{ 'User-Agent' = 'twingate-deploy-script'; 'Accept' = 'application/vnd.github+json' }
+        $asset = $release.assets |
+            Where-Object { $_.name -match '^qemu-img-windows-x64.*\.zip$' } |
+            Select-Object -First 1
+        if ($asset) { return $asset.browser_download_url }
+        return $null
+    }
+    catch {
+        Write-Status "Could not query GitHub API for qemu-img asset: $_" -Type Warning
+        return $null
+    }
 }
 
 function Install-QemuImg {
@@ -281,18 +310,23 @@ function Install-QemuImg {
         Write-Status 'qemu-img.exe is required. Exiting.' -Type Error
         Write-Status "Manual download: https://github.com/fdcastel/qemu-img-windows-x64/releases" -Type Info
         Write-Status "Place qemu-img.exe in: $ToolsPath" -Type Info
-        exit 1
+        throw 'qemu-img.exe is required. Exiting.'
     }
 
     if (-not (Test-Path $ToolsPath)) {
         New-Item -ItemType Directory -Path $ToolsPath -Force | Out-Null
     }
 
-    # Primary: fdcastel minimal Windows build
-    $releaseUrl = 'https://github.com/fdcastel/qemu-img-windows-x64/releases/latest/download/qemu-img-windows-x64.zip'
+    # Primary: resolve the current versioned asset from the GitHub API.
+    $releaseUrl = Resolve-QemuImgAssetUrl
     $zipPath = Join-Path $ToolsPath 'qemu-img.zip'
 
+    if (-not $releaseUrl) {
+        Write-Status 'Could not resolve the latest qemu-img release; using fallback.' -Type Warning
+    }
+
     try {
+        if (-not $releaseUrl) { throw 'No primary qemu-img URL resolved.' }
         Write-Status "Downloading from: $releaseUrl" -Type Action
         Invoke-WebRequest -Uri $releaseUrl -OutFile $zipPath -UseBasicParsing
         Expand-Archive -Path $zipPath -DestinationPath $ToolsPath -Force
@@ -329,7 +363,7 @@ function Install-QemuImg {
             Write-Status "Could not download qemu-img.exe. $_" -Type Error
             Write-Status "Manual download: https://github.com/fdcastel/qemu-img-windows-x64/releases" -Type Info
             Write-Status "Place qemu-img.exe in: $ToolsPath" -Type Info
-            exit 1
+            throw "Could not download qemu-img.exe. $_"
         }
     }
 
@@ -366,7 +400,7 @@ function Get-OrCreateExternalSwitch {
     $adapters = Get-NetAdapter -Physical | Where-Object { $_.Status -eq 'Up' }
     if ($null -eq $adapters -or @($adapters).Count -eq 0) {
         Write-Status 'No physical network adapters with link-up status found. Cannot create external vSwitch.' -Type Error
-        exit 1
+        throw 'No physical network adapters with link-up status found. Cannot create external vSwitch.'
     }
 
     $selected = $null
@@ -385,7 +419,7 @@ function Get-OrCreateExternalSwitch {
         $idx = 0
         if (-not [int]::TryParse($choice, [ref]$idx) -or $idx -lt 0 -or $idx -ge @($adapters).Count) {
             Write-Status 'Invalid selection.' -Type Error
-            exit 1
+            throw 'Invalid selection.'
         }
         $selected = @($adapters)[$idx]
     }
@@ -452,11 +486,11 @@ function Invoke-TwingateApi {
                 }
                 if ($statusCode -eq 401 -or $statusCode -eq 403) {
                     Write-Status "API token is invalid or lacks required permissions (HTTP $statusCode)." -Type Error
-                    exit 1
+                    throw "API token is invalid or lacks required permissions (HTTP $statusCode)."
                 }
                 if ($statusCode -eq 0 -and ($_.Exception.Message -match 'Unable to connect|name.*could not be resolved')) {
                     Write-Status "Cannot reach Twingate API at $uri. Check your TwingateNetwork slug and network connectivity." -Type Error
-                    exit 1
+                    throw "Cannot reach Twingate API at $uri. Check your TwingateNetwork slug and network connectivity."
                 }
                 if (($statusCode -eq 429 -or $statusCode -ge 500) -and $attempt -lt $maxAttempts) {
                     $jitter = (Get-Random -Maximum 1000) / 1000
@@ -497,7 +531,7 @@ query RemoteNetworkByName($name: String!) {
     $data = Invoke-TwingateApi -Network $Network -Token $Token -Query $query -Variables @{ name = $Name }
     if ($null -eq $data.remoteNetwork) {
         Write-Status "Remote Network '$Name' not found. Check the name in your Twingate Admin Console." -Type Error
-        exit 1
+        throw "Remote Network '$Name' not found. Check the name in your Twingate Admin Console."
     }
     Write-Status "Found Remote Network: $($data.remoteNetwork.name) (ID: $($data.remoteNetwork.id))"
     return $data.remoteNetwork.id
@@ -663,6 +697,70 @@ function Wait-ConnectorOnline {
     return $false
 }
 
+function Get-FixVMPlan {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [bool]$IsAlive,
+        [Parameter(Mandatory)] [bool]$PackageInstalled
+    )
+    if ($IsAlive)          { return 'none' }
+    if ($PackageInstalled) { return 'start' }
+    return 'reprovision'
+}
+
+function Get-SshErrorHint {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)] [AllowEmptyString()] [string]$Output)
+    switch -Regex ($Output) {
+        'Unable to locate package twingate-connector' {
+            return 'Twingate apt repo missing - the connector was never bootstrapped. Repair with: -Action FixVM -VMName <name>'
+        }
+        'Temporary failure in name resolution|Could not resolve host' {
+            return 'DNS resolution failed inside the VM. Check the VM network/DNS, then retry.'
+        }
+        'Connection timed out|Connection refused|Permission denied' {
+            return 'SSH/network connectivity problem reaching the VM. Confirm the VM is running and reachable.'
+        }
+        default { return $null }
+    }
+}
+
+function Write-OrphanCallout {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '')]
+    [CmdletBinding()]
+    param()
+    if ($script:OrphanedConnectors.Count -eq 0) { return }
+    Write-Host ''
+    Write-Status '================ ACTION REQUIRED ================' -Type Error
+    Write-Status 'FixVM created net-new connector(s). The OLD connector record(s) below are now orphaned' -Type Error
+    Write-Status 'and should be reviewed/removed in the Twingate Admin Console (Remote Network > Connectors):' -Type Error
+    foreach ($o in $script:OrphanedConnectors) {
+        Write-Status "  - $($o.VMName): old ConnectorId $($o.OldConnectorId)" -Type Warning
+    }
+    Write-Status '=================================================' -Type Error
+}
+
+function Get-ConnectorRemoteNetworkId {
+    [CmdletBinding()]
+    param([Parameter()] [string]$ConnectorId)
+    if (-not $ConnectorId) {
+        Write-Status 'No existing ConnectorId on this VM; cannot infer Remote Network for reprovision.' -Type Error
+        throw 'Cannot determine Remote Network for reprovision.'
+    }
+    $query = @'
+query ConnectorRemoteNetwork($id: ID!) {
+  connector(id: $id) {
+    remoteNetwork { id }
+  }
+}
+'@
+    $data = Invoke-TwingateApi -Network $TwingateNetwork -Token $ApiToken -Query $query -Variables @{ id = $ConnectorId }
+    if ($null -eq $data.connector -or $null -eq $data.connector.remoteNetwork) {
+        throw "Could not resolve Remote Network for connector $ConnectorId."
+    }
+    return $data.connector.remoteNetwork.id
+}
+
 function Get-TwingateRemoteNetworkConnectors {
     [CmdletBinding()]
     param(
@@ -720,7 +818,7 @@ function Get-UbuntuCloudImage {
             Write-Status "Failed to download Ubuntu cloud image: $_" -Type Error
             Write-Status "Manual download URL: $imgUrl" -Type Info
             Write-Status "Place the file at: $imgPath" -Type Info
-            exit 1
+            throw "Failed to download Ubuntu cloud image: $_"
         }
         Write-Status 'Download complete. Verifying SHA256...' -Type Action
     }
@@ -759,7 +857,7 @@ function Get-UbuntuCloudImage {
         Write-Status "  Actual:   $actualHash" -Type Error
         Remove-Item $imgPath -Force
         Write-Status 'Corrupt file removed. Re-run to download again.' -Type Info
-        exit 1
+        throw "SHA256 mismatch for $imgName. Corrupt file removed. Re-run to download again."
     }
 
     Write-Status "SHA256 verified: $imgName"
@@ -789,7 +887,7 @@ function Convert-CloudImageToVhdx {
     if ($LASTEXITCODE -ne 0) {
         Write-Status "qemu-img conversion failed (exit code $LASTEXITCODE)." -Type Error
         if (Test-Path $vhdxPath) { Remove-Item $vhdxPath -Force }
-        exit 1
+        throw "qemu-img conversion failed (exit code $LASTEXITCODE)."
     }
 
     Write-Status "Base VHDX created: $vhdxPath"
@@ -822,7 +920,7 @@ function New-SshKeyPair {
         if ($keygenExit -ne 0) {
             $keygenDetail = ($keygenOutput | Out-String).Trim()
             Write-Status "ssh-keygen failed (exit code $keygenExit): $keygenDetail" -Type Error
-            exit 1
+            throw "ssh-keygen failed (exit code $keygenExit): $keygenDetail"
         }
     }
     else {
@@ -852,6 +950,74 @@ function New-SshKeyPair {
     }
 }
 
+function Get-ConnectorBootstrapScript {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [string]$AccessToken,
+        [Parameter(Mandatory)] [string]$RefreshToken,
+        [Parameter(Mandatory)] [string]$TwingateNetwork,
+        [Parameter()] [ValidateRange(1, 10)] [int]$MaxAttempts = 5,
+        [Parameter()] [string]$DeployedByLabel = 'hyperv-deploy-script-v2'
+    )
+
+    # NOTE: PowerShell interpolates $var in @"..."@ here-strings. Every bash
+    # variable reference is escaped as `$ so it survives to the guest verbatim.
+    $bash = @"
+#!/bin/bash
+# Twingate connector bootstrap with bounded retry.
+# Generated by Deploy-TwingateConnector.ps1 - do not edit on the host.
+set -u
+
+TG_ACCESS_TOKEN='$AccessToken'
+TG_REFRESH_TOKEN='$RefreshToken'
+TG_NETWORK='$TwingateNetwork'
+TG_MAX_ATTEMPTS=$MaxAttempts
+TG_LABEL='$DeployedByLabel'
+
+log() { echo "[twingate-bootstrap] `$1"; }
+
+install_once() {
+  curl -fsSL 'https://binaries.twingate.com/connector/setup.sh' -o /tmp/twingate-setup.sh || return 1
+  TWINGATE_ACCESS_TOKEN="`$TG_ACCESS_TOKEN" \
+  TWINGATE_REFRESH_TOKEN="`$TG_REFRESH_TOKEN" \
+  TWINGATE_NETWORK="`$TG_NETWORK" \
+  bash /tmp/twingate-setup.sh || return 1
+  return 0
+}
+
+connector_installed() {
+  dpkg -s twingate-connector >/dev/null 2>&1
+}
+
+attempt=1
+while [ "`$attempt" -le "`$TG_MAX_ATTEMPTS" ]; do
+  log "install attempt `$attempt of `$TG_MAX_ATTEMPTS"
+  install_once
+  if connector_installed; then
+    log "connector package present after attempt `$attempt"
+    break
+  fi
+  if [ "`$attempt" -eq "`$TG_MAX_ATTEMPTS" ]; then
+    log "ERROR: connector not installed after `$TG_MAX_ATTEMPTS attempts; giving up"
+    exit 1
+  fi
+  backoff=`$(( 10 * (2 ** (attempt - 1)) ))
+  if [ "`$backoff" -gt 60 ]; then backoff=60; fi
+  log "attempt `$attempt failed; retrying in `${backoff}s"
+  sleep "`$backoff"
+  attempt=`$(( attempt + 1 ))
+done
+
+systemctl enable twingate-connector
+systemctl start twingate-connector
+echo "TWINGATE_LABEL_DEPLOYED_BY=`$TG_LABEL" >> /etc/twingate/connector.conf
+systemctl restart twingate-connector
+log "bootstrap complete"
+"@
+
+    return ($bash -replace "`r`n", "`n")
+}
+
 function New-CloudInitUserData {
     [CmdletBinding()]
     param(
@@ -869,6 +1035,11 @@ function New-CloudInitUserData {
     $pwChars  = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
     $password = -join ((1..24) | ForEach-Object { $pwChars[(Get-Random -Maximum $pwChars.Length)] })
     $hostname = ($VmName.ToLower() -replace '[^a-z0-9-]', '-').TrimEnd('-')
+
+    $bootstrap = Get-ConnectorBootstrapScript -AccessToken $AccessToken `
+        -RefreshToken $RefreshToken -TwingateNetwork $TwingateNetwork
+    # Indent every line by 6 spaces to sit under the YAML "content: |" block.
+    $bootstrapIndented = ($bootstrap -split "`n" | ForEach-Object { '      ' + $_ }) -join "`n"
 
     $userdata = @"
 #cloud-config
@@ -896,6 +1067,10 @@ write_files:
       hv_blkvsc
       hv_netvsc
     append: true
+  - path: /var/lib/twingate-bootstrap.sh
+    permissions: '0700'
+    content: |
+$bootstrapIndented
 
 package_update: true
 package_upgrade: true
@@ -914,11 +1089,7 @@ runcmd:
   - chmod 700 /home/$username/.ssh
   - chmod 600 /home/$username/.ssh/authorized_keys
   - chown -R ${username}:${username} /home/$username/.ssh
-  - curl -s 'https://binaries.twingate.com/connector/setup.sh' | sudo TWINGATE_ACCESS_TOKEN='$AccessToken' TWINGATE_REFRESH_TOKEN='$RefreshToken' TWINGATE_NETWORK='$TwingateNetwork' bash
-  - systemctl enable twingate-connector
-  - systemctl start twingate-connector
-  - echo 'TWINGATE_LABEL_DEPLOYED_BY=hyperv-deploy-script-v2' >> /etc/twingate/connector.conf
-  - systemctl restart twingate-connector
+  - bash /var/lib/twingate-bootstrap.sh
   - DEBIAN_FRONTEND=noninteractive apt-get install -y linux-virtual linux-cloud-tools-virtual linux-tools-virtual
   - update-initramfs -u
 
@@ -1102,6 +1273,33 @@ function New-ConnectorVM {
     return $true
 }
 
+function Resolve-SingleConnectorVM {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [string]$VMName,
+        [Parameter(Mandatory)] [string]$VMPath
+    )
+    if ($VMName -notlike 'TG-Connector-*') {
+        Write-Status "VM name '$VMName' does not match the TG-Connector-* convention." -Type Error
+        return $null
+    }
+    $vm = Get-VM -Name $VMName -ErrorAction SilentlyContinue
+    if ($null -eq $vm) {
+        Write-Status "VM '$VMName' not found." -Type Warning
+        return $null
+    }
+    $sshUser = $null; $connectorId = $null
+    foreach ($part in ($vm.Notes -split ';')) {
+        if ($part -match '^TwingateConnectorId=(.+)$') { $connectorId = $Matches[1] }
+        if ($part -match '^SshUser=(.+)$')             { $sshUser     = $Matches[1] }
+    }
+    if (-not $sshUser) {
+        $userFile = Join-Path (Join-Path $VMPath $VMName) 'ssh_user.txt'
+        if (Test-Path $userFile) { $sshUser = (Get-Content $userFile -Raw).Trim() }
+    }
+    return @{ VM = $vm; ConnectorId = $connectorId; SshUser = $sshUser }
+}
+
 function Get-VmSshDetails {
     [CmdletBinding()]
     param(
@@ -1204,7 +1402,8 @@ function Resolve-InteractiveParams {
     param(
         [switch]$RequireNetwork,
         [switch]$RequireToken,
-        [switch]$RequireRemoteNetwork
+        [switch]$RequireRemoteNetwork,
+        [switch]$RequireVMName
     )
 
     if ($RequireNetwork -and -not $script:TwingateNetwork) {
@@ -1220,10 +1419,13 @@ function Resolve-InteractiveParams {
     }
     if ($RequireToken -and $script:ApiToken -isnot [SecureString]) {
         Write-Status 'ApiToken must be a SecureString or a plain string. Use -ApiToken (ConvertTo-SecureString "token" -AsPlainText -Force).' -Type Error
-        exit 1
+        throw 'ApiToken must be a SecureString or a plain string. Use -ApiToken (ConvertTo-SecureString "token" -AsPlainText -Force).'
     }
     if ($RequireRemoteNetwork -and -not $script:RemoteNetwork) {
         $script:RemoteNetwork = Read-SecurePrompt -Prompt 'Enter the Remote Network name (as shown in Admin Console)'
+    }
+    if ($RequireVMName -and -not $script:VMName) {
+        $script:VMName = Read-SecurePrompt -Prompt 'Enter the VM name to repair (e.g., TG-Connector-NY-1)'
     }
 
     # Validate network slug and API token immediately - before any expensive operations
@@ -1346,17 +1548,31 @@ function Invoke-DeployAction {
     Write-Status '--- Deployment Summary ---' -Type Action
     $results | Format-Table -AutoSize | Out-String | Write-Host
 
+    $timedOut = @($results | Where-Object { $_.Status -eq 'TIMEOUT' })
+    if ($timedOut.Count -gt 0) {
+        Write-Status 'One or more connectors never came ALIVE. The VM exists but has no working connector.' -Type Error
+        foreach ($t in $timedOut) {
+            Write-Status "  - $($t.Name): repair with -Action FixVM -VMName $($t.Name)" -Type Warning
+        }
+    }
 }
 function Invoke-RemoveAction {
     [CmdletBinding(SupportsShouldProcess)]
     param()
-    Resolve-InteractiveParams -RequireNetwork -RequireToken -RequireRemoteNetwork
-
-    $pattern = "TG-Connector-$RemoteNetwork-*"
-    $vms = Get-VM -Name $pattern -ErrorAction SilentlyContinue
-    if ($null -eq $vms -or @($vms).Count -eq 0) {
-        Write-Status "No VMs matching '$pattern' found. Nothing to remove." -Type Warning
-        return
+    if ($VMName) {
+        Resolve-InteractiveParams -RequireNetwork -RequireToken
+        $resolved = Resolve-SingleConnectorVM -VMName $VMName -VMPath $VMPath
+        if ($null -eq $resolved) { return }
+        $vms = @($resolved.VM)
+    }
+    else {
+        Resolve-InteractiveParams -RequireNetwork -RequireToken -RequireRemoteNetwork
+        $pattern = "TG-Connector-$RemoteNetwork-*"
+        $vms = Get-VM -Name $pattern -ErrorAction SilentlyContinue
+        if ($null -eq $vms -or @($vms).Count -eq 0) {
+            Write-Status "No VMs matching '$pattern' found. Nothing to remove." -Type Warning
+            return
+        }
     }
 
     Write-Status "Found $(@($vms).Count) VM(s) to remove:"
@@ -1448,7 +1664,9 @@ function Invoke-UpdateConnectorAction {
             -PrivateKeyPath $sshDetails.PrivateKey -Command $cmd -ConnectTimeout 30
 
         if (-not $sshResult.Success) {
+            $hint = Get-SshErrorHint -Output ($sshResult.Output -join ' ')
             Write-Status "SSH command failed on $($vm.Name)." -Type Warning
+            if ($hint) { Write-Status "  Likely cause: $hint" -Type Error }
             $results += [PSCustomObject]@{ Name = $vm.Name; Result = 'SSH_FAILED' }
             continue
         }
@@ -1532,6 +1750,100 @@ function Invoke-UpdateOSAction {
     $results | Format-Table -AutoSize | Out-String | Write-Host
 }
 
+function Invoke-FixVMAction {
+    Resolve-InteractiveParams -RequireNetwork -RequireToken -RequireVMName
+
+    $resolved = Resolve-SingleConnectorVM -VMName $VMName -VMPath $VMPath
+    if ($null -eq $resolved) { throw "Cannot resolve VM '$VMName' for repair." }
+    if ($resolved.VM.State -ne 'Running') {
+        throw "VM '$VMName' is not running (state: $($resolved.VM.State)). Start it first."
+    }
+
+    $ssh = Get-VmSshDetails -VmName $VMName -VMPath $VMPath -TimeoutSeconds 60
+    if ($null -eq $ssh) {
+        throw "Cannot reach '$VMName' over SSH; cannot repair."
+    }
+
+    try {
+        # Is the connector already ALIVE in the API?
+        $isAlive = $false
+        if ($resolved.ConnectorId) {
+            $state = Get-TwingateConnectorStatus -Network $TwingateNetwork -Token $ApiToken -ConnectorId $resolved.ConnectorId
+            $isAlive = ($state -eq 'ALIVE')
+        }
+
+        # Is the package installed in the guest?
+        $check = Invoke-SshCommand -IpAddress $ssh.IpAddress -Username $ssh.Username `
+            -PrivateKeyPath $ssh.PrivateKey -Command 'dpkg -s twingate-connector >/dev/null 2>&1 && echo INSTALLED || echo MISSING'
+        $packageInstalled = ($check.Success -and (($check.Output -join '') -match 'INSTALLED'))
+
+        $plan = Get-FixVMPlan -IsAlive $isAlive -PackageInstalled $packageInstalled
+        Write-Status "FixVM plan for ${VMName}: $plan" -Type Action
+
+        $waitTimeout = 180
+
+        switch ($plan) {
+            'none' {
+                Write-Status "$VMName connector is already ALIVE. Nothing to do." -Type Action
+                return
+            }
+            'start' {
+                $r = Invoke-SshCommand -IpAddress $ssh.IpAddress -Username $ssh.Username `
+                    -PrivateKeyPath $ssh.PrivateKey -Command 'sudo systemctl enable --now twingate-connector'
+                if (-not $r.Success) {
+                    throw "Failed to start connector on ${VMName}: $(Get-SshErrorHint -Output ($r.Output -join ' '))"
+                }
+            }
+            'reprovision' {
+                Write-Status "Connector software missing on $VMName; reprovisioning a net-new connector." -Type Action
+                $remoteNetId = Get-ConnectorRemoteNetworkId -ConnectorId $resolved.ConnectorId
+                $newId  = New-TwingateConnector -Network $TwingateNetwork -Token $ApiToken `
+                            -RemoteNetworkId $remoteNetId -ConnectorName $VMName
+                # Record the old connector as orphaned as soon as the new one is minted,
+                # so it is surfaced (via the finally block) even if a later step fails.
+                if ($resolved.ConnectorId) {
+                    $script:OrphanedConnectors.Add([PSCustomObject]@{ VMName = $VMName; OldConnectorId = $resolved.ConnectorId })
+                }
+                $tokens = New-TwingateConnectorTokens -Network $TwingateNetwork -Token $ApiToken -ConnectorId $newId
+                $bootstrap = Get-ConnectorBootstrapScript -AccessToken $tokens.AccessToken `
+                            -RefreshToken $tokens.RefreshToken -TwingateNetwork $TwingateNetwork
+
+                # Push the script (base64 to avoid quoting issues), run it, then remove it (it holds tokens).
+                $remoteScript = '/tmp/twingate-bootstrap.sh'
+                $b64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($bootstrap))
+                $r = Invoke-SshCommand -IpAddress $ssh.IpAddress -Username $ssh.Username `
+                    -PrivateKeyPath $ssh.PrivateKey `
+                    -Command "echo $b64 | base64 -d | sudo tee $remoteScript >/dev/null && sudo bash $remoteScript; rc=`$?; sudo rm -f $remoteScript; exit `$rc"
+                if (-not $r.Success) {
+                    throw "Bootstrap failed on ${VMName}: $(Get-SshErrorHint -Output ($r.Output -join ' '))"
+                }
+
+                # Repoint Notes to the new connector, using the authoritative SSH username.
+                $newNotes = "TwingateConnectorId=$newId;SshUser=$($ssh.Username)"
+                Set-VM -Name $VMName -Notes $newNotes
+                $resolved = @{ VM = $resolved.VM; ConnectorId = $newId; SshUser = $ssh.Username }
+                $waitTimeout = 300  # reprovision includes a full apt install
+            }
+        }
+
+        if (-not $resolved.ConnectorId) {
+            Write-Status "$VMName connector service was started, but the VM has no ConnectorId in Notes; cannot verify ALIVE via the API." -Type Warning
+            return
+        }
+
+        $online = Wait-ConnectorOnline -Network $TwingateNetwork -Token $ApiToken `
+            -ConnectorId $resolved.ConnectorId -ConnectorName $VMName -TimeoutSeconds $waitTimeout
+        if ($online) {
+            Write-Status "$VMName connector is ALIVE after repair." -Type Action
+        } else {
+            Write-Status "$VMName connector did not come ALIVE after repair." -Type Error
+        }
+    }
+    finally {
+        Write-OrphanCallout
+    }
+}
+
 function Invoke-ListAction {
     $vms = Get-VM -Name 'TG-Connector-*' -ErrorAction SilentlyContinue
     if ($null -eq $vms -or @($vms).Count -eq 0) {
@@ -1575,6 +1887,7 @@ function Main {
         'UpdateConnector' { Invoke-UpdateConnectorAction }
         'UpdateOS'        { Invoke-UpdateOSAction }
         'List'            { Invoke-ListAction }
+        'FixVM'           { Invoke-FixVMAction }
     }
 }
 
@@ -1583,6 +1896,12 @@ Start-Transcript -Path $logPath -Append | Out-Null
 Write-Status "Transcript logging to: $logPath"
 try {
     Main
+}
+catch {
+    Write-Status "Aborting '$Action': $($_.Exception.Message)" -Type Error
+    $firstFrame = ($_.ScriptStackTrace -split "`n" | Select-Object -First 1)
+    if ($firstFrame) { Write-Status "  at $firstFrame" -Type Info }
+    exit 1
 }
 finally {
     Stop-Transcript | Out-Null

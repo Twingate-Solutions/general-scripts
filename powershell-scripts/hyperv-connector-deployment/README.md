@@ -13,7 +13,7 @@ Automate the deployment and lifecycle management of Twingate Connectors on Windo
 
 ### Overview
 
-Creates Twingate Connectors end-to-end — Twingate API connector records, Ubuntu 24.04 Gen2 Hyper-V VMs, and cloud-init provisioning — with no manual steps beyond running the script. Supports five lifecycle actions: **Deploy**, **Remove**, **UpdateConnector**, **UpdateOS**, and **List**.
+Creates Twingate Connectors end-to-end — Twingate API connector records, Ubuntu 24.04 Gen2 Hyper-V VMs, and cloud-init provisioning — with no manual steps beyond running the script. Supports six lifecycle actions: **Deploy**, **Remove**, **UpdateConnector**, **UpdateOS**, **List**, and **FixVM**.
 
 ### Prerequisites
 
@@ -23,12 +23,13 @@ Creates Twingate Connectors end-to-end — Twingate API connector records, Ubunt
 - Internet access (downloads Ubuntu cloud image and qemu-img.exe on first run)
 - A Twingate API token with **Read, Write & Provision** scope
 - A Remote Network already created in the Twingate Admin Console
+- qemu-img.exe is resolved automatically from the latest fdcastel GitHub release (with a Cloudbase v2.3.0 fallback); no manual download needed.
 
 ### Parameters
 
 | Parameter | Required | Default | Description |
 |---|---|---|---|
-| `-Action` | Yes | — | `Deploy`, `Remove`, `UpdateConnector`, `UpdateOS`, or `List` |
+| `-Action` | Yes | — | `Deploy`, `Remove`, `UpdateConnector`, `UpdateOS`, `List`, or `FixVM` |
 | `-TwingateNetwork` | Most actions | prompted | Your Twingate network slug (e.g. `acme` for `acme.twingate.com`) |
 | `-ApiToken` | Most actions | prompted | API token. Accepts plain string or SecureString. |
 | `-RemoteNetwork` | Deploy, Remove | prompted | Remote Network display name from the Admin Console |
@@ -37,6 +38,7 @@ Creates Twingate Connectors end-to-end — Twingate API connector records, Ubunt
 | `-VMCpu` | Deploy only | `1` | vCPUs per VM |
 | `-VMMemory` | Deploy only | `2147483648` (2 GB) | RAM per VM in bytes |
 | `-VSwitch` | No | auto-detect | Hyper-V external vSwitch name |
+| `-VMName` | FixVM (required); Remove (optional) | prompted for FixVM | Target a single VM by name, e.g. `TG-Connector-NY-1` |
 
 `List` requires no API parameters. `UpdateConnector` and `UpdateOS` require `-TwingateNetwork` and `-ApiToken` but not `-RemoteNetwork` — they discover VMs by name pattern (`TG-Connector-*`).
 
@@ -44,13 +46,15 @@ Creates Twingate Connectors end-to-end — Twingate API connector records, Ubunt
 
 **Deploy** — Creates connectors via the Twingate API, provisions Ubuntu 24.04 Gen2 VMs using cloud-init, and waits for all connectors to report `ALIVE`. On first run, downloads the Ubuntu cloud image (~600 MB) and qemu-img.exe to `VMPath\images` and `VMPath\tools` respectively. These are cached and reused on subsequent runs.
 
-**Remove** — Stops and deletes all VMs matching `TG-Connector-<RemoteNetwork>-*`, removes their disk files, and deletes the corresponding connector records from the Twingate API. Fail-safe: if the API delete fails, local VM cleanup still proceeds with a warning.
+**Remove** — Stops and deletes all VMs matching `TG-Connector-<RemoteNetwork>-*`, removes their disk files, and deletes the corresponding connector records from the Twingate API. Pass `-VMName <name>` to remove just one VM (its connector record and files); in that mode `-RemoteNetwork` is not required. Without `-VMName`, Remove targets all `TG-Connector-<RemoteNetwork>-*` VMs as before. Fail-safe: if the API delete fails, local VM cleanup still proceeds with a warning.
 
 **UpdateConnector** — SSHs into each running VM sequentially and runs `apt-get install twingate-connector` to upgrade to the latest connector package. Verifies the connector reports `ALIVE` before moving to the next VM.
 
 **UpdateOS** — SSHs into each running VM sequentially and runs `apt-get upgrade` to apply all OS updates. Verifies the connector reports `ALIVE` before moving to the next VM.
 
 **List** — Displays all `TG-Connector-*` VMs with their Hyper-V state, IP address, uptime, and connector ID. No API call required.
+
+**FixVM** — Repairs a single connector VM by name (`-VMName`). Checks whether the connector is already `ALIVE` (no-op), installed but stopped (starts it), or missing entirely (creates a **net-new** connector, runs the bootstrap over SSH, and repoints the VM). When it reprovisions, the VM's previous connector record is left in the Twingate Admin Console and flagged in an "ACTION REQUIRED" notice at the end of the run so you can review/remove it manually.
 
 ### Usage Examples
 
@@ -77,6 +81,12 @@ Creates Twingate Connectors end-to-end — Twingate API connector records, Ubunt
 # Pass the API token as a SecureString (avoids plain text in shell history)
 .\Deploy-TwingateConnector.ps1 -Action Deploy -TwingateNetwork "acme" -RemoteNetwork "Office" `
     -ApiToken (ConvertTo-SecureString 'your-token' -AsPlainText -Force)
+
+# Repair a single connector VM
+.\Deploy-TwingateConnector.ps1 -Action FixVM -TwingateNetwork "acme" -VMName "TG-Connector-NY-1"
+
+# Remove just one VM (RemoteNetwork not required)
+.\Deploy-TwingateConnector.ps1 -Action Remove -TwingateNetwork "acme" -VMName "TG-Connector-NY-1"
 ```
 
 ### What the script creates
