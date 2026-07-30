@@ -1,3 +1,5 @@
+# Unique Ports from Network Events
+
 This script will ingest a Twingate Network Events report (Admin > Reports > Network Events) and output all unique host and port combinations that were actually accessed over Twingate to a CSV file.
 
 If you currently have resources defined with wide or universal port allowances, this may help determine what ports are actually being accessed by your users, and make it easier to tighten things up.

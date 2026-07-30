@@ -1,11 +1,23 @@
-# Scripts to filter Network Event logs
+# Filter Network Events Report by User
 
-Scripts in this folder can be used to filter the network event logs that you can generate from the Reports screen in the Settings of your Twingate Admin Console.
+Filters a Twingate Network Events report CSV (from Admin Console → Settings →
+Reports) down to a single user's events.
 
 ## Prerequisites
 
-You should only need Python 3 for these scripts, as they use the `sys` and `csv` built-in modules only.
+Python 3 only — the script uses the standard library (`sys`, `csv`) with no
+external dependencies.
 
 ## Usage
 
-Check each script for instructions on usage.
+```bash
+python3 filter-by-user.py <input-file> <user@domain.com> <output-file>
+```
+
+### Example
+
+A sample input file, `testfile.csv`, is included in this folder:
+
+```bash
+python3 filter-by-user.py testfile.csv testuser@domain.com testfileoutput.csv
+```

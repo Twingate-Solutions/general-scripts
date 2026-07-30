@@ -25,7 +25,7 @@ Before running the script, ensure the following prerequisites are met:
 Run the script using the following command:
 
 ```bash
-./remove_users.sh <group_id> <network_name> <api_token>
+./test_remove_users.sh <group_id> <network_name> <api_token>
 ```
 
 - `<group_id>`: The ID of the group from which users will be removed.
@@ -35,7 +35,7 @@ Run the script using the following command:
 ### Example
 
 ```bash
-./remove_users.sh 123456789
+./test_remove_users.sh 123456789 mynetworkname tgapitoken
 ```
 
 ## Script Explanation
